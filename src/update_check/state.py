@@ -4,11 +4,16 @@ import json
 import os
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 APPEARANCES = ("System", "Light", "Dark")
+
+
+def local_now() -> datetime:
+    """The current local time, timezone-aware."""
+    return datetime.now(UTC).astimezone()
 
 
 @dataclass
@@ -65,14 +70,16 @@ class Settings:
     weekday: int = 0
     hour: int = 10
     appearance: str = "System"
+    # Start with Windows so reminders can appear. Applied automatically when running as the .exe.
+    autostart: bool = True
 
 
 @dataclass
 class State:
     steps: list[Step] = field(default_factory=default_steps)
     settings: Settings = field(default_factory=Settings)
-    # Start of the weekly cycle the checks in `done` belong to.
-    cycle_start: datetime | None = None
+    # The day the weekly cycle that `done` belongs to started.
+    cycle_start: date | None = None
     done: set[str] = field(default_factory=set)
     last_completed: datetime | None = None
     last_reminded: date | None = None
@@ -81,13 +88,17 @@ class State:
     def is_complete(self) -> bool:
         return bool(self.steps) and all(step.id in self.done for step in self.steps)
 
-    def current_cycle_start(self, now: datetime) -> datetime:
-        """The most recent reminder weekday and hour at or before `now`."""
-        days_back = (now.weekday() - self.settings.weekday) % 7
-        start = datetime.combine(now.date(), time(self.settings.hour)) - timedelta(days=days_back)
-        return start if start <= now else start - timedelta(days=7)
+    def current_cycle_start(self, now: datetime) -> date:
+        """The most recent reminder day whose reminder hour has passed.
 
-    def next_reminder(self, now: datetime) -> datetime:
+        Works on local wall-clock date and hour, so a daylight saving change can't shift the cycle.
+        """
+        days_back = (now.weekday() - self.settings.weekday) % 7
+        if days_back == 0 and now.hour < self.settings.hour:
+            days_back = 7
+        return now.date() - timedelta(days=days_back)
+
+    def next_reminder(self, now: datetime) -> date:
         return self.current_cycle_start(now) + timedelta(days=7)
 
     def roll_over(self, now: datetime) -> bool:
@@ -127,10 +138,10 @@ class State:
         return cls(
             steps=[Step(**step) for step in data["steps"]],
             settings=Settings(**data["settings"]),
-            cycle_start=_parse(data.get("cycle_start"), datetime.fromisoformat),
+            cycle_start=_parse(data.get("cycle_start"), _parse_date),
             done=set(data.get("done", [])),
             last_completed=_parse(data.get("last_completed"), datetime.fromisoformat),
-            last_reminded=_parse(data.get("last_reminded"), date.fromisoformat),
+            last_reminded=_parse(data.get("last_reminded"), _parse_date),
         )
 
 
@@ -140,6 +151,11 @@ def _format(value: date | None) -> str | None:
 
 def _parse(value, parser):
     return parser(value) if value else None
+
+
+def _parse_date(value: str) -> date:
+    # Also accepts a full timestamp, which earlier versions stored for the cycle start.
+    return datetime.fromisoformat(value).date()
 
 
 def data_file() -> Path:

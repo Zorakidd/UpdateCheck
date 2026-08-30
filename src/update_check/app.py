@@ -1,28 +1,24 @@
 """The weekly update checklist window."""
 
-import logging
+from dataclasses import astuple
 from datetime import date
 from pathlib import Path
 from tkinter import messagebox
 
 import customtkinter as ctk
 
-from update_check import system, updater
+from update_check import system
 from update_check.state import (
     APPEARANCES,
     WEEKDAYS,
     State,
     Step,
-    data_file,
     default_steps,
-    load,
     local_now,
     save,
 )
+from update_check.system import TITLE
 
-log = logging.getLogger(__name__)
-
-TITLE = "Update Check"
 HOURS = [f"{hour:02d}:00" for hour in range(24)]
 
 # (light, dark) color pairs
@@ -92,9 +88,50 @@ def _place(window: ctk.CTk | ctk.CTkToplevel, width: int, height: int) -> None:
     window.geometry(f"{width}x{height}+{x}+{y}")
 
 
+def _reuse(widgets: list, steps: list[Step], create) -> list:
+    """Return one widget per step, in order. Building a widget takes tens of milliseconds, so the widgets of
+    unchanged steps are kept; the rest are made with `create(step)` or destroyed."""
+    unused: dict[tuple, list] = {}
+    for widget in widgets:
+        unused.setdefault(astuple(widget.step), []).append(widget)
+    kept = []
+    for step in steps:
+        if matches := unused.get(astuple(step)):
+            widget = matches.pop()
+            widget.step = step
+        else:
+            widget = create(step)
+        kept.append(widget)
+    for leftovers in unused.values():
+        for widget in leftovers:
+            widget.destroy()
+    return kept
+
+
+def _pack_in_order(master, widgets: list, **options) -> None:
+    """Pack `widgets` into `master` in this order. Only widgets that are out of place are moved: re-packing
+    every card made reordering a step 6-15x slower."""
+    slaves = master.pack_slaves()
+    for index, widget in enumerate(widgets):
+        if index < len(slaves) and slaves[index] is widget:
+            continue
+        if index:
+            widget.pack(after=widgets[index - 1], **options)
+        elif slaves:
+            widget.pack(before=slaves[0], **options)
+        else:
+            widget.pack(**options)
+        if widget in slaves:
+            slaves.remove(widget)
+        slaves.insert(index, widget)
+
+
 class StepCard(ctk.CTkFrame):
     def __init__(self, master, step: Step, done: bool, on_toggle):
-        super().__init__(master, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=12)
+        # Colored up front rather than by _restyle(): recoloring a frame redraws it and all its children.
+        super().__init__(
+            master, fg_color=CARD_DONE if done else CARD, border_color=BORDER, border_width=1, corner_radius=12,
+        )
         self.step = step
         self.on_toggle = on_toggle
         self.done = ctk.BooleanVar(value=done)
@@ -107,7 +144,9 @@ class StepCard(ctk.CTkFrame):
         ).grid(row=0, column=0, rowspan=2, padx=(16, 12), pady=16)
 
         bottom_pad = 0 if step.detail else 14
-        self.title_label = ctk.CTkLabel(self, text=step.title, font=_font(15, True), anchor="w", height=22)
+        self.title_label = ctk.CTkLabel(
+            self, text=step.title, font=_font(15, True), text_color=MUTED if done else TEXT, anchor="w", height=22,
+        )
         self.title_label.grid(row=0, column=1, sticky="ew", pady=(14, bottom_pad))
         self.detail_label = ctk.CTkLabel(
             self, text=step.detail, font=_font(12), text_color=MUTED, anchor="w", justify="left", height=18,
@@ -123,7 +162,6 @@ class StepCard(ctk.CTkFrame):
         for widget in (self, self.title_label, self.detail_label):
             widget.bind("<Button-1>", self._clicked)
         self.bind("<Configure>", self._wrap_detail)
-        self._restyle()
 
     def _clicked(self, _event) -> None:
         self.done.set(not self.done.get())
@@ -132,6 +170,11 @@ class StepCard(ctk.CTkFrame):
     def _toggled(self) -> None:
         self._restyle()
         self.on_toggle(self.step.id, self.done.get())
+
+    def set_done(self, done: bool) -> None:
+        if done != self.done.get():
+            self.done.set(done)
+            self._restyle()
 
     def _restyle(self) -> None:
         done = self.done.get()
@@ -160,6 +203,8 @@ class App(ctk.CTk):
         self.title(TITLE)
         _place(self, 560, 700)
         self.minsize(460, 520)
+        # CustomTkinter polls the Windows theme every 30 ms, most of an idle window's CPU use.
+        ctk.AppearanceModeTracker.update_loop_interval = 1000
 
         self._build_header()
         self._build_footer()
@@ -168,6 +213,10 @@ class App(ctk.CTk):
             scrollbar_button_color=SUBTLE, scrollbar_button_hover_color=SUBTLE_HOVER,
         )
         self.steps_frame.pack(fill="both", expand=True, padx=(20, 12), pady=(0, 12))
+        self.cards: list[StepCard] = []
+        self.empty_label = ctk.CTkLabel(
+            self.steps_frame, text="No steps yet. Add some in Settings.", font=_font(13), text_color=MUTED,
+        )
 
         self.render()
         self.after(60_000, self._tick)
@@ -220,16 +269,18 @@ class App(ctk.CTk):
         self.last_label.grid(row=1, column=2, sticky="e")
 
     def render(self) -> None:
-        for child in self.steps_frame.winfo_children():
-            child.destroy()
-        for step in self.data.steps:
-            StepCard(self.steps_frame, step, step.id in self.data.done, self._step_toggled).pack(
-                fill="x", padx=(0, 8), pady=5,
-            )
-        if not self.data.steps:
-            ctk.CTkLabel(
-                self.steps_frame, text="No steps yet. Add some in Settings.", font=_font(13), text_color=MUTED,
-            ).pack(pady=40)
+        done = self.data.done
+        self.cards = _reuse(
+            self.cards, self.data.steps,
+            lambda step: StepCard(self.steps_frame, step, step.id in done, self._step_toggled),
+        )
+        for card in self.cards:
+            card.set_done(card.step.id in done)
+        if self.cards:
+            self.empty_label.pack_forget()
+        else:
+            self.empty_label.pack(pady=40)
+        _pack_in_order(self.steps_frame, self.cards, fill="x", padx=(0, 8), pady=5)
         self._refresh_summary()
 
     def _refresh_summary(self) -> None:
@@ -245,7 +296,8 @@ class App(ctk.CTk):
             self.progress.configure(progress_color=SUCCESS)
         else:
             self.headline.configure(text="Time for updates")
-            self.summary.configure(text=f"{done} of {total} steps done · week of {_day(data.cycle_start)}")
+            week = data.cycle_start or data.current_cycle_start(now)
+            self.summary.configure(text=f"{done} of {total} steps done · week of {_day(week)}")
             self.progress.configure(progress_color=ACCENT)
         self.progress.set(done / total if total else 0)
 
@@ -291,6 +343,7 @@ class App(ctk.CTk):
 
     def open_settings(self) -> None:
         if self.settings_window and self.settings_window.winfo_exists():
+            self.settings_window.deiconify()
             self.settings_window.focus_force()
             return
         self.settings_window = SettingsWindow(self)
@@ -307,6 +360,37 @@ class App(ctk.CTk):
         self.after(1500, lambda: self.attributes("-topmost", False))
 
 
+class StepRow(ctk.CTkFrame):
+    """A step in Settings, with buttons to move and remove it."""
+
+    def __init__(self, master, step: Step, on_move, on_remove):
+        super().__init__(master, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=12)
+        self.step = step
+        self.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            self, text=step.title, font=_font(14, True), text_color=TEXT, anchor="w", height=20,
+        ).grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=(10, 0))
+        ctk.CTkLabel(
+            self, text=step.action or "No open action", font=_font(12), text_color=MUTED, anchor="w", height=18,
+        ).grid(row=1, column=0, sticky="ew", padx=(16, 8), pady=(0, 10))
+        controls = ctk.CTkFrame(self, fg_color="transparent")
+        controls.grid(row=0, column=1, rowspan=2, padx=(0, 12))
+        self.up = _secondary_button(controls, text="↑", width=30, command=lambda: on_move(self.step, -1))
+        self.down = _secondary_button(controls, text="↓", width=30, command=lambda: on_move(self.step, 1))
+        self.up.pack(side="left", padx=2)
+        self.down.pack(side="left", padx=2)
+        _secondary_button(controls, text="Remove", width=72, command=lambda: on_remove(self.step)).pack(
+            side="left", padx=(6, 0),
+        )
+
+    def set_position(self, first: bool, last: bool) -> None:
+        for button, disabled in ((self.up, first), (self.down, last)):
+            state = "disabled" if disabled else "normal"
+            # Configuring a button redraws it, so only when its state changes.
+            if button.cget("state") != state:
+                button.configure(state=state)
+
+
 class SettingsWindow(ctk.CTkToplevel):
     def __init__(self, app: App):
         super().__init__(app, fg_color=BG)
@@ -317,6 +401,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.transient(app)
         # A CTkToplevel on Windows only takes focus once it has finished appearing.
         self.after(200, self.focus_force)
+        ctk.AppearanceModeTracker.add(self._reshow_after_theme_change, self)
         settings = app.data.settings
 
         body = ctk.CTkScrollableFrame(
@@ -358,6 +443,7 @@ class SettingsWindow(ctk.CTkToplevel):
         _section(body, "Checklist steps")
         self.steps_frame = ctk.CTkFrame(body, fg_color="transparent")
         self.steps_frame.pack(fill="x")
+        self.rows: list[StepRow] = []
         self._render_steps()
 
         _section(body, "Add a step")
@@ -381,29 +467,13 @@ class SettingsWindow(ctk.CTkToplevel):
         )
 
     def _render_steps(self) -> None:
-        for child in self.steps_frame.winfo_children():
-            child.destroy()
-        steps = self.app.data.steps
-        for index, step in enumerate(steps):
-            row = _card(self.steps_frame)
-            row.grid_columnconfigure(0, weight=1)
-            ctk.CTkLabel(
-                row, text=step.title, font=_font(14, True), text_color=TEXT, anchor="w", height=20,
-            ).grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=(10, 0))
-            ctk.CTkLabel(
-                row, text=step.action or "No open action", font=_font(12), text_color=MUTED, anchor="w", height=18,
-            ).grid(row=1, column=0, sticky="ew", padx=(16, 8), pady=(0, 10))
-            controls = ctk.CTkFrame(row, fg_color="transparent")
-            controls.grid(row=0, column=1, rowspan=2, padx=(0, 12))
-            up = _secondary_button(controls, text="↑", width=30, command=lambda i=index: self._move_step(i, -1))
-            down = _secondary_button(controls, text="↓", width=30, command=lambda i=index: self._move_step(i, 1))
-            up.configure(state="disabled" if index == 0 else "normal")
-            down.configure(state="disabled" if index == len(steps) - 1 else "normal")
-            up.pack(side="left", padx=2)
-            down.pack(side="left", padx=2)
-            _secondary_button(controls, text="Remove", width=72, command=lambda s=step: self._remove_step(s)).pack(
-                side="left", padx=(6, 0),
-            )
+        self.rows = _reuse(
+            self.rows, self.app.data.steps,
+            lambda step: StepRow(self.steps_frame, step, self._move_step, self._remove_step),
+        )
+        _pack_in_order(self.steps_frame, self.rows, fill="x", pady=5)
+        for index, row in enumerate(self.rows):
+            row.set_position(first=index == 0, last=index == len(self.rows) - 1)
 
     def _changed(self) -> None:
         self.app.save()
@@ -426,6 +496,20 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.set_appearance_mode(value)
         self.app.save()
 
+    def _reshow_after_theme_change(self, _mode: str) -> None:
+        # To recolor title bars, CustomTkinter hides each window and restores its previous state 5 ms
+        # later. Hiding the main window first also hides this transient window, so it gets "restored"
+        # as hidden and the Settings button seems dead. Show it again once that has run.
+        self.after(50, self._show_if_hidden)
+
+    def _show_if_hidden(self) -> None:
+        if self.winfo_exists() and self.state() == "withdrawn":
+            self.deiconify()
+
+    def destroy(self) -> None:
+        ctk.AppearanceModeTracker.remove(self._reshow_after_theme_change)
+        super().destroy()
+
     def _add_step(self) -> None:
         title = self.new_title.get().strip()
         if not title:
@@ -436,8 +520,10 @@ class SettingsWindow(ctk.CTkToplevel):
             entry.delete(0, "end")
         self._changed()
 
-    def _move_step(self, index: int, offset: int) -> None:
+    def _move_step(self, step: Step, offset: int) -> None:
         steps = self.app.data.steps
+        # By identity, since a hand-edited checklist can hold two identical steps.
+        index = next(index for index, other in enumerate(steps) if other is step)
         steps[index], steps[index + offset] = steps[index + offset], steps[index]
         self._changed()
 
@@ -452,46 +538,6 @@ class SettingsWindow(ctk.CTkToplevel):
             self._changed()
 
 
-def run(check_only: bool) -> None:
-    """Open the checklist. With `check_only`, open it only when this week's check still needs a reminder."""
-    path = data_file()
-    now = local_now()
-    lock = system.claim_single_instance()
-    if lock is None:
-        # The open window saves its own state, so only read it here.
-        data = load(path)
-        data.roll_over(now)
-        if not check_only or data.should_remind(now):
-            system.focus_window(TITLE)
-        return
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        filename=path.with_name("update-check.log"),
-        encoding="utf-8",
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        level=logging.INFO,
-    )
-    # Holding the lock means no other copy is running from the .exe that the update replaces.
-    if updater.self_update(path.parent):
-        system.release_single_instance(lock)
-        updater.restart()
-        return
-
-    data = load(path)
-    if system.FROZEN:
-        # Only the .exe registers itself; from source this would point Windows startup at the dev Python.
-        try:
-            system.sync_autostart(data.settings.autostart, data.settings.hour)
-        except OSError:
-            log.exception("Couldn't register the app to start with Windows")
-    data.roll_over(now)
-    if check_only:
-        if not data.should_remind(now):
-            save(data, path)
-            return
-        data.last_reminded = now.date()
-    save(data, path)
-
+def open_window(data: State, path: Path, reminder: bool) -> None:
     ctk.set_appearance_mode(data.settings.appearance)
-    App(data, path, reminder=check_only).mainloop()
+    App(data, path, reminder=reminder).mainloop()

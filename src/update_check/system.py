@@ -10,6 +10,10 @@ from ctypes import wintypes
 from pathlib import Path
 
 APP_NAME = "UpdateCheck"
+# The window title, which a second copy of the app also uses to find and focus the open window.
+TITLE = "Update Check"
+# True when running as the PyInstaller-built .exe rather than from source.
+FROZEN = getattr(sys, "frozen", False)
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 # A URI scheme such as "ms-settings:" or "https:". Two or more letters, so "C:\..." is not a URI.
 _URI = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]+:")
@@ -17,23 +21,39 @@ _ERROR_ALREADY_EXISTS = 183
 _SW_RESTORE = 9
 _SPI_GETWORKAREA = 0x30
 
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_kernel32.CreateMutexW.restype = wintypes.HANDLE
+_kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
 
 def reminder_command() -> list[str]:
     """The command that runs a background reminder check without a console window."""
-    if getattr(sys, "frozen", False):
+    if FROZEN:
         return [sys.executable, "--check"]
     python = Path(sys.executable)
     pythonw = python.with_name("pythonw.exe")
     return [str(pythonw if pythonw.exists() else python), "-m", "update_check", "--check"]
 
 
-def autostart_enabled() -> bool:
+def _registered_command() -> str | None:
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
-            winreg.QueryValueEx(key, APP_NAME)
-        return True
+            return winreg.QueryValueEx(key, APP_NAME)[0]
     except FileNotFoundError:
-        return False
+        return None
+
+
+def autostart_enabled() -> bool:
+    return _registered_command() is not None
+
+
+def sync_autostart(enabled: bool, hour: int) -> None:
+    """Make the registration match the setting, and re-register if the .exe has moved."""
+    if not enabled:
+        if autostart_enabled():
+            disable_autostart()
+    elif _registered_command() != subprocess.list2cmdline(reminder_command()):
+        enable_autostart(hour)
 
 
 def enable_autostart(hour: int) -> None:
@@ -56,6 +76,7 @@ def disable_autostart() -> None:
 def _schtasks(*args: str, check: bool = True) -> None:
     result = subprocess.run(
         ["schtasks", *args],
+        check=False,
         capture_output=True,
         encoding="oem",
         errors="replace",
@@ -73,12 +94,18 @@ def open_action(action: str) -> None:
         subprocess.Popen(["cmd", "/k", action], creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 
-def claim_single_instance() -> bool:
-    """Return False if another Update Check process is already running."""
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    # The mutex handle stays open until this process exits.
-    kernel32.CreateMutexW(None, False, f"Local\\{APP_NAME}.SingleInstance")
-    return ctypes.get_last_error() != _ERROR_ALREADY_EXISTS
+def claim_single_instance() -> int | None:
+    """Return a lock that stays held until released or the process exits, or None if another
+    Update Check process already holds it."""
+    handle = _kernel32.CreateMutexW(None, False, f"Local\\{APP_NAME}.SingleInstance")
+    if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
+        _kernel32.CloseHandle(handle)
+        return None
+    return handle
+
+
+def release_single_instance(lock: int) -> None:
+    _kernel32.CloseHandle(lock)
 
 
 def work_area() -> tuple[int, int, int, int]:

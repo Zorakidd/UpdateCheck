@@ -10,6 +10,6 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    from update_check.app import run
+    from update_check.startup import run
 
     run(check_only=args.check)
