@@ -1,5 +1,6 @@
 """The weekly update checklist window."""
 
+import time
 from dataclasses import astuple
 from datetime import date
 from pathlib import Path
@@ -7,9 +8,10 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from update_check import system
+from update_check import graphics, system
 from update_check.state import (
     APPEARANCES,
+    GRAPHICS_STEP,
     WEEKDAYS,
     State,
     Step,
@@ -32,6 +34,8 @@ ACCENT = ("#2563EB", "#3B82F6")
 ACCENT_HOVER = ("#1D4ED8", "#2563EB")
 ACCENT_SOFT = ("#BFDBFE", "#1E3A8A")
 SUCCESS = ("#16A34A", "#22C55E")
+# Darker in light mode, so small text keeps enough contrast on white.
+SUCCESS_TEXT = ("#15803D", "#22C55E")
 SUBTLE = ("#E5E7EB", "#262A31")
 SUBTLE_HOVER = ("#D1D5DB", "#323741")
 SELECTED = ("#FFFFFF", "#3A3F48")
@@ -137,22 +141,25 @@ class StepCard(ctk.CTkFrame):
         self.done = ctk.BooleanVar(value=done)
         self.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkCheckBox(
+        self.checkbox = ctk.CTkCheckBox(
             self, text="", width=24, variable=self.done, command=self._toggled,
             checkbox_width=22, checkbox_height=22, corner_radius=6, border_width=2,
             fg_color=SUCCESS, hover_color=SUCCESS, border_color=MUTED, checkmark_color="#FFFFFF",
-        ).grid(row=0, column=0, rowspan=2, padx=(16, 12), pady=16)
+        )
+        self.checkbox.grid(row=0, column=0, rowspan=2, padx=(16, 12), pady=16)
 
         bottom_pad = 0 if step.detail else 14
+        # Without an Open button the text would reach the card's right border and paint over it.
+        right_pad = 0 if step.action else 16
         self.title_label = ctk.CTkLabel(
             self, text=step.title, font=_font(15, True), text_color=MUTED if done else TEXT, anchor="w", height=22,
         )
-        self.title_label.grid(row=0, column=1, sticky="ew", pady=(14, bottom_pad))
+        self.title_label.grid(row=0, column=1, sticky="ew", padx=(0, right_pad), pady=(14, bottom_pad))
         self.detail_label = ctk.CTkLabel(
             self, text=step.detail, font=_font(12), text_color=MUTED, anchor="w", justify="left", height=18,
         )
         if step.detail:
-            self.detail_label.grid(row=1, column=1, sticky="ew", pady=(0, 14))
+            self.detail_label.grid(row=1, column=1, sticky="ew", padx=(0, right_pad), pady=(0, 14))
 
         if step.action:
             _secondary_button(self, text="Open", width=64, command=self._open).grid(
@@ -194,6 +201,109 @@ class StepCard(ctk.CTkFrame):
             messagebox.showerror(TITLE, f"Couldn't open “{self.step.action}”.\n\n{error}", parent=self)
 
 
+class GraphicsCard(StepCard):
+    """The graphics drivers step: each graphics card with its driver's status and a button to get updates."""
+
+    def __init__(self, master, step: Step, done: bool, on_toggle, drivers: graphics.DriverChecks):
+        super().__init__(master, step, done, on_toggle)
+        self.drivers = drivers
+        self.rows: list[DriverRow] = []
+        # Level with the title, not centered on a card that grows with each graphics card.
+        self.checkbox.grid_configure(sticky="n", pady=(13, 14))
+        self.title_label.grid_configure(pady=(14, 4))
+        self.rows_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.rows_frame.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(0, 16), pady=(0, 14))
+        self.rows_frame.grid_columnconfigure(0, weight=1)
+        self.empty_label = ctk.CTkLabel(
+            self.rows_frame, text="No NVIDIA, AMD or Intel graphics found.", font=_font(12), text_color=MUTED,
+            anchor="w", height=18,
+        )
+        self.empty_label.bind("<Button-1>", self._clicked)
+        self.show()
+
+    def show(self) -> None:
+        cards = self.drivers.cards
+        while len(self.rows) > len(cards):
+            self.rows.pop().destroy()
+        while len(self.rows) < len(cards):
+            row = DriverRow(self.rows_frame, self._clicked)
+            row.grid(row=len(self.rows), column=0, sticky="ew", pady=(10 if self.rows else 0, 0))
+            self.rows.append(row)
+        for row, card in zip(self.rows, cards):
+            row.show(card, *self.drivers.status(card))
+        if cards:
+            self.empty_label.grid_forget()
+        else:
+            self.empty_label.grid(row=0, column=0, sticky="ew")
+
+
+class DriverRow(ctk.CTkFrame):
+    """A graphics card in the graphics drivers step."""
+
+    def __init__(self, master, on_click):
+        super().__init__(master, fg_color="transparent")
+        self.grid_columnconfigure(0, weight=1)
+        self.name_label = ctk.CTkLabel(
+            self, font=_font(13, True), text_color=TEXT, anchor="w", justify="left", height=18,
+        )
+        self.name_label.grid(row=0, column=0, sticky="ew")
+        self.status_label = ctk.CTkLabel(self, anchor="w", justify="left", height=18)
+        self.status_label.grid(row=1, column=0, sticky="ew")
+        self.button = _secondary_button(self, width=72)
+        self.button.grid(row=0, column=1, rowspan=2, padx=(12, 0))
+        for label in (self.name_label, self.status_label):
+            label.bind("<Button-1>", on_click)
+        # Re-wrap when the row is resized, and when a new button text changes the button's width.
+        self.bind("<Configure>", self._wrap)
+        self.button.bind("<Configure>", self._wrap)
+        # By whether the status asks for action.
+        self.status_fonts = {False: _font(12), True: _font(12, True)}
+
+    def show(self, card: graphics.Card, status: str, release: graphics.Release | None) -> None:
+        app = graphics.vendor_app(card.vendor)
+        driver = f"Driver {card.version}"
+        match status:
+            case graphics.CHECKING:
+                text, color = f"{driver} · Checking for updates…", MUTED
+            case graphics.UP_TO_DATE:
+                text, color = f"{driver} · Up to date", SUCCESS_TEXT
+            case graphics.UPDATE_AVAILABLE:
+                text, color = f"{driver} · Update available: {release.version}", ACCENT
+            case graphics.CHECK_FAILED:
+                text, color = f"{driver} · Couldn't check for updates", MUTED
+            case graphics.NO_DRIVER:
+                text, color = "No driver installed", ACCENT
+            case _:
+                where = "in the app" if app else "on the website"
+                text, color = f"{driver} · Check for updates {where}", MUTED
+        urgent = status in (graphics.UPDATE_AVAILABLE, graphics.NO_DRIVER)
+        self.name_label.configure(text=card.name)
+        self.status_label.configure(text=text, text_color=color, font=self.status_fonts[urgent])
+
+        if app:
+            label, action, what = f"Open {app.name}", app.open, app.name
+        else:
+            url = release.url if release else graphics.DOWNLOAD_PAGES[card.vendor]
+            label, action, what = "Download driver", lambda: system.open_action(url), "the download page"
+        self.button.configure(
+            text=label, command=lambda: self._run(action, what),
+            fg_color=ACCENT if urgent else SUBTLE, hover_color=ACCENT_HOVER if urgent else SUBTLE_HOVER,
+            text_color="#FFFFFF" if urgent else TEXT,
+        )
+
+    def _wrap(self, _event) -> None:
+        scaling = ctk.ScalingTracker.get_widget_scaling(self)
+        wraplength = max((self.winfo_width() - self.button.winfo_width()) / scaling - 12, 120)
+        self.name_label.configure(wraplength=wraplength)
+        self.status_label.configure(wraplength=wraplength)
+
+    def _run(self, action, what: str) -> None:
+        try:
+            action()
+        except OSError as error:
+            messagebox.showerror(TITLE, f"Couldn't open {what}.\n\n{error}", parent=self)
+
+
 class App(ctk.CTk):
     def __init__(self, data: State, path: Path, reminder: bool):
         super().__init__(fg_color=BG)
@@ -217,9 +327,15 @@ class App(ctk.CTk):
         self.empty_label = ctk.CTkLabel(
             self.steps_frame, text="No steps yet. Add some in Settings.", font=_font(13), text_color=MUTED,
         )
+        self.drivers = graphics.DriverChecks()
+        # When the graphics cards were last detected; 0 until the checklist first shows the graphics step.
+        self._drivers_refreshed_at = 0.0
+        self._polling_drivers = False
 
         self.render()
         self.after(60_000, self._tick)
+        # So coming back after updating a driver shows the new version.
+        self.bind("<FocusIn>", self._focused, add="+")
         if reminder:
             self._bring_to_front()
 
@@ -269,11 +385,11 @@ class App(ctk.CTk):
         self.last_label.grid(row=1, column=2, sticky="e")
 
     def render(self) -> None:
+        if not self._drivers_refreshed_at and any(step.id == GRAPHICS_STEP for step in self.data.steps):
+            # Only a checklist with the graphics step looks at the graphics cards and asks NVIDIA online.
+            self._refresh_drivers()
         done = self.data.done
-        self.cards = _reuse(
-            self.cards, self.data.steps,
-            lambda step: StepCard(self.steps_frame, step, step.id in done, self._step_toggled),
-        )
+        self.cards = _reuse(self.cards, self.data.steps, self._make_card)
         for card in self.cards:
             card.set_done(card.step.id in done)
         if self.cards:
@@ -282,6 +398,12 @@ class App(ctk.CTk):
             self.empty_label.pack(pady=40)
         _pack_in_order(self.steps_frame, self.cards, fill="x", padx=(0, 8), pady=5)
         self._refresh_summary()
+
+    def _make_card(self, step: Step) -> StepCard:
+        done = step.id in self.data.done
+        if step.id == GRAPHICS_STEP:
+            return GraphicsCard(self.steps_frame, step, done, self._step_toggled, self.drivers)
+        return StepCard(self.steps_frame, step, done, self._step_toggled)
 
     def _refresh_summary(self) -> None:
         now = local_now()
@@ -352,7 +474,36 @@ class App(ctk.CTk):
         if self.data.roll_over(local_now()):
             self.save()
             self.render()
+            if self._drivers_refreshed_at:
+                # NVIDIA may have released a driver since the last lookup.
+                self._refresh_drivers(recheck=True)
         self.after(60_000, self._tick)
+
+    def _focused(self, _event) -> None:
+        # Focus also moves between the window's own widgets, so re-detect at most every few seconds.
+        if self._drivers_refreshed_at and time.monotonic() - self._drivers_refreshed_at > 3:
+            self._refresh_drivers()
+
+    def _refresh_drivers(self, recheck: bool = False) -> None:
+        self._drivers_refreshed_at = time.monotonic()
+        if self.drivers.refresh(recheck):
+            self._show_drivers()
+        if self.drivers.busy and not self._polling_drivers:
+            self._polling_drivers = True
+            self.after(200, self._poll_drivers)
+
+    def _poll_drivers(self) -> None:
+        if self.drivers.collect():
+            self._show_drivers()
+        if self.drivers.busy:
+            self.after(200, self._poll_drivers)
+        else:
+            self._polling_drivers = False
+
+    def _show_drivers(self) -> None:
+        for card in self.cards:
+            if isinstance(card, GraphicsCard):
+                card.show()
 
     def _bring_to_front(self) -> None:
         self.attributes("-topmost", True)
@@ -370,8 +521,9 @@ class StepRow(ctk.CTkFrame):
         ctk.CTkLabel(
             self, text=step.title, font=_font(14, True), text_color=TEXT, anchor="w", height=20,
         ).grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=(10, 0))
+        subtitle = "Checks your graphics drivers" if step.id == GRAPHICS_STEP else step.action or "No open action"
         ctk.CTkLabel(
-            self, text=step.action or "No open action", font=_font(12), text_color=MUTED, anchor="w", height=18,
+            self, text=subtitle, font=_font(12), text_color=MUTED, anchor="w", height=18,
         ).grid(row=1, column=0, sticky="ew", padx=(16, 8), pady=(0, 10))
         controls = ctk.CTkFrame(self, fg_color="transparent")
         controls.grid(row=0, column=1, rowspan=2, padx=(0, 12))

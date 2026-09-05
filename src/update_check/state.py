@@ -9,6 +9,10 @@ from pathlib import Path
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 APPEARANCES = ("System", "Light", "Dark")
+# The step that lists the PC's graphics cards with their driver status, instead of a fixed description.
+GRAPHICS_STEP = "graphics"
+# The default steps from before checklists recorded which default steps they had been offered.
+_ORIGINAL_DEFAULT_STEPS = ("windows-update", "drivers", "store", "winget", "defender", "backup")
 
 
 def local_now() -> datetime:
@@ -39,6 +43,7 @@ def default_steps() -> list[Step]:
             "ms-settings:windowsupdate-optionalupdates",
             id="drivers",
         ),
+        Step("Graphics drivers", id=GRAPHICS_STEP),
         Step(
             "Microsoft Store apps",
             "Open the Library and click “Get updates”.",
@@ -83,6 +88,9 @@ class State:
     done: set[str] = field(default_factory=set)
     last_completed: datetime | None = None
     last_reminded: date | None = None
+    # Ids of the default steps this checklist has been offered, so a default step added in an update shows up
+    # once in existing checklists, and stays away once removed.
+    offered_steps: set[str] = field(default_factory=lambda: {step.id for step in default_steps()})
 
     @property
     def is_complete(self) -> bool:
@@ -123,6 +131,19 @@ class State:
         """Whether a background check should open the window. Call `roll_over` first."""
         return bool(self.steps) and not self.is_complete and self.last_reminded != now.date()
 
+    def add_new_default_steps(self) -> None:
+        """Add the default steps this checklist hasn't been offered yet, each after the last of the earlier
+        default steps it has, or at the end."""
+        defaults = default_steps()
+        for index, step in enumerate(defaults):
+            if step.id in self.offered_steps:
+                continue
+            self.offered_steps.add(step.id)
+            ids = [existing.id for existing in self.steps]
+            if step.id not in ids:
+                earlier = [ids.index(default.id) for default in defaults[:index] if default.id in ids]
+                self.steps.insert(max(earlier) + 1 if earlier else len(self.steps), step)
+
     def to_json(self) -> dict:
         return {
             "steps": [asdict(step) for step in self.steps],
@@ -131,18 +152,22 @@ class State:
             "done": sorted(self.done),
             "last_completed": _format(self.last_completed),
             "last_reminded": _format(self.last_reminded),
+            "offered_steps": sorted(self.offered_steps),
         }
 
     @classmethod
     def from_json(cls, data: dict) -> State:
-        return cls(
+        state = cls(
             steps=[Step(**step) for step in data["steps"]],
             settings=Settings(**data["settings"]),
             cycle_start=_parse(data.get("cycle_start"), _parse_date),
             done=set(data.get("done", [])),
             last_completed=_parse(data.get("last_completed"), datetime.fromisoformat),
             last_reminded=_parse(data.get("last_reminded"), _parse_date),
+            offered_steps=set(data.get("offered_steps", _ORIGINAL_DEFAULT_STEPS)),
         )
+        state.add_new_default_steps()
+        return state
 
 
 def _format(value: date | None) -> str | None:

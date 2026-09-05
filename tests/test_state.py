@@ -1,6 +1,7 @@
+import json
 from datetime import UTC, date, datetime, timedelta, timezone
 
-from update_check.state import Settings, State, Step, load, save
+from update_check.state import GRAPHICS_STEP, Settings, State, Step, load, save
 
 
 def at(day: int, hour: int = 0, minute: int = 0) -> datetime:
@@ -116,3 +117,33 @@ def test_unreadable_file_is_backed_up(tmp_path):
 
     assert load(path) == State()
     assert (tmp_path / "state.json.bak").read_text(encoding="utf-8") == "{not json"
+
+
+def test_checklist_saved_before_a_new_default_step_gets_it_once(tmp_path):
+    path = tmp_path / "state.json"
+    state = State()
+    state.steps = [step for step in state.steps if step.id != GRAPHICS_STEP]
+    save(state, path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["offered_steps"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    loaded = load(path)
+    ids = [step.id for step in loaded.steps]
+    assert ids.index(GRAPHICS_STEP) == ids.index("drivers") + 1
+
+    loaded.steps = [step for step in loaded.steps if step.id != GRAPHICS_STEP]
+    save(loaded, path)
+    assert GRAPHICS_STEP not in [step.id for step in load(path).steps]
+
+
+def test_new_default_step_goes_after_the_last_earlier_default_step_or_at_the_end():
+    offered = {"windows-update", "drivers", "store", "winget", "defender", "backup"}
+    after_windows_update = State(steps=[Step("Windows Update", id="windows-update"), Step("Mine", id="mine")])
+    only_custom = State(steps=[Step("Mine", id="mine")])
+    for state in (after_windows_update, only_custom):
+        state.offered_steps = set(offered)
+        state.add_new_default_steps()
+
+    assert [step.id for step in after_windows_update.steps] == ["windows-update", GRAPHICS_STEP, "mine"]
+    assert [step.id for step in only_custom.steps] == ["mine", GRAPHICS_STEP]
