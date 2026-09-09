@@ -63,6 +63,12 @@ def default_steps() -> list[Step]:
             id="defender",
         ),
         Step(
+            "Free up space",
+            "Delete temporary files, or turn on Storage Sense to do it automatically.",
+            "ms-settings:storagesense",
+            id="storage",
+        ),
+        Step(
             "Backups",
             "Make sure the latest backup finished without errors.",
             id="backup",

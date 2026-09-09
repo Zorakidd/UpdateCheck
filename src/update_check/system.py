@@ -18,6 +18,7 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 # A URI scheme such as "ms-settings:" or "https:". Two or more letters, so "C:\..." is not a URI.
 _URI = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]+:")
 _ERROR_ALREADY_EXISTS = 183
+_ERROR_CANCELLED = 1223
 _SW_RESTORE = 9
 _SPI_GETWORKAREA = 0x30
 
@@ -92,6 +93,29 @@ def open_action(action: str) -> None:
         os.startfile(action)
     else:
         subprocess.Popen(["cmd", "/k", action], creationflags=subprocess.CREATE_NEW_CONSOLE)
+
+
+# DISM goes first: it repairs the Windows image that System File Checker restores files from.
+_REPAIR_WINDOWS = (
+    "title Repair Windows"
+    " & echo Step 1 of 2: Repairing the Windows image with DISM..."
+    " & DISM /Online /Cleanup-Image /RestoreHealth"
+    " & echo."
+    " & echo Step 2 of 2: Checking system files with System File Checker..."
+    " & sfc /scannow"
+    " & echo."
+    " & echo Finished. If files were repaired, restart the PC."
+)
+
+
+def repair_windows() -> None:
+    """Run DISM and System File Checker as administrator, in a console window that stays open."""
+    try:
+        os.startfile("cmd.exe", "runas", f"/k {_REPAIR_WINDOWS}")
+    except OSError as error:
+        # Declining the administrator prompt isn't an error.
+        if error.winerror != _ERROR_CANCELLED:
+            raise
 
 
 def claim_single_instance() -> int | None:

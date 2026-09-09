@@ -145,5 +145,5 @@ def test_new_default_step_goes_after_the_last_earlier_default_step_or_at_the_end
         state.offered_steps = set(offered)
         state.add_new_default_steps()
 
-    assert [step.id for step in after_windows_update.steps] == ["windows-update", GRAPHICS_STEP, "mine"]
-    assert [step.id for step in only_custom.steps] == ["mine", GRAPHICS_STEP]
+    assert [step.id for step in after_windows_update.steps] == ["windows-update", GRAPHICS_STEP, "storage", "mine"]
+    assert [step.id for step in only_custom.steps] == ["mine", GRAPHICS_STEP, "storage"]

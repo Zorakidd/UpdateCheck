@@ -618,6 +618,21 @@ class SettingsWindow(ctk.CTkToplevel):
             side="right",
         )
 
+        _section(body, "Troubleshooting")
+        repair = _card(body)
+        repair.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            repair, text="Repair Windows", font=_font(14, True), text_color=TEXT, anchor="w", height=20,
+        ).grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=(14, 0))
+        ctk.CTkLabel(
+            repair, font=_font(12), text_color=MUTED, anchor="w", justify="left", wraplength=290,
+            text="Finds and repairs damaged system files with DISM and System File Checker. "
+            "Needs administrator rights and can take a while.",
+        ).grid(row=1, column=0, sticky="ew", padx=(16, 8), pady=(0, 14))
+        _secondary_button(repair, text="Start repair", width=100, command=self._repair_windows).grid(
+            row=0, column=1, rowspan=2, padx=(0, 16),
+        )
+
     def _render_steps(self) -> None:
         self.rows = _reuse(
             self.rows, self.app.data.steps,
@@ -688,6 +703,12 @@ class SettingsWindow(ctk.CTkToplevel):
         if messagebox.askyesno(TITLE, "Replace your checklist with the default steps?", parent=self):
             self.app.data.steps = default_steps()
             self._changed()
+
+    def _repair_windows(self) -> None:
+        try:
+            system.repair_windows()
+        except OSError as error:
+            messagebox.showerror(TITLE, f"Couldn't start the repair.\n\n{error}", parent=self)
 
 
 def open_window(data: State, path: Path, reminder: bool) -> None:

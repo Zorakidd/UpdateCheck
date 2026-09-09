@@ -1,7 +1,8 @@
 # Update Check
 
 A small Windows app that reminds you once a week to work through a checklist of update steps:
-Windows Update, driver and graphics driver updates, Store apps, winget, Defender and backups by default. It ships as a
+Windows Update, driver and graphics driver updates, Store apps, winget, Defender, freeing up disk space and
+backups by default. It ships as a
 single .exe that starts with Windows and keeps itself up to date from GitHub releases.
 
 ## How it works
@@ -15,6 +16,8 @@ single .exe that starts with Windows and keeps itself up to date from GitHub rel
   Each card gets a button for NVIDIA App, AMD Software: Adrenalin Edition or Intel Graphics Software, or
   for the driver download page if that app isn't installed. The status updates when you come back to the
   window after installing a driver. Removing the step in **Settings** also stops the online lookup.
+- **Repair Windows.** For when Windows misbehaves, **Settings** can run DISM and System File Checker
+  (`sfc /scannow`) as administrator in a console window that stays open.
 - **Starts with Windows.** When the .exe starts, it registers a sign-in entry for your user and a daily
   Task Scheduler task at the reminder hour (no admin rights needed), and re-registers them if the .exe
   has moved. Both run `UpdateCheck.exe --check`, which opens the window only while this week's checklist
