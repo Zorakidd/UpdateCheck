@@ -12,15 +12,15 @@ import sys
 import urllib.request
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 
-from update_check.system import FROZEN
+from update_check.system import FROZEN, USER_AGENT
 
 # The repository whose releases carry the .exe, tagged with the version, e.g. "v1.2.0".
 GITHUB_REPO = "Zorakidd/Update-check"
 RELEASES_URL = os.environ.get(
     "UPDATE_CHECK_RELEASES_URL", f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 )
-USER_AGENT = "Update-Check"
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ def self_update(data_dir: Path) -> bool:
     return True
 
 
-def _find_update(installed: str) -> tuple[str, dict] | None:
+def _find_update(installed: str) -> tuple[str, dict[str, Any]] | None:
     request = urllib.request.Request(
         RELEASES_URL, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
     )
@@ -97,7 +97,7 @@ def _find_update(installed: str) -> tuple[str, dict] | None:
     return None
 
 
-def _install(asset: dict, exe: Path) -> None:
+def _install(asset: dict[str, Any], exe: Path) -> None:
     new = exe.with_name(exe.name + ".new")
     old = exe.with_name(exe.name + ".old")
     request = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": USER_AGENT})
@@ -117,7 +117,7 @@ def _install(asset: dict, exe: Path) -> None:
         raise
 
 
-def verify(content: bytes, asset: dict) -> None:
+def verify(content: bytes, asset: dict[str, Any]) -> None:
     """Reject a truncated, corrupted or non-executable download."""
     name = asset.get("name", "download")
     if len(content) != asset.get("size", len(content)) or not content.startswith(b"MZ"):

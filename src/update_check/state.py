@@ -2,10 +2,11 @@
 
 import json
 import os
-import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 APPEARANCES = ("System", "Light", "Dark")
@@ -20,13 +21,21 @@ def local_now() -> datetime:
     return datetime.now(UTC).astimezone()
 
 
+def _new_id() -> str:
+    # uuid is imported here rather than at the top: only a step added by hand needs an id, while every
+    # background check would pay for the import.
+    import uuid
+
+    return uuid.uuid4().hex[:8]
+
+
 @dataclass
 class Step:
     title: str
     detail: str = ""
     # URL, ms-settings: page, file path or shell command opened by the step's "Open" button.
     action: str = ""
-    id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
+    id: str = field(default_factory=_new_id)
 
 
 def default_steps() -> list[Step]:
@@ -150,7 +159,7 @@ class State:
                 earlier = [ids.index(default.id) for default in defaults[:index] if default.id in ids]
                 self.steps.insert(max(earlier) + 1 if earlier else len(self.steps), step)
 
-    def to_json(self) -> dict:
+    def to_json(self) -> dict[str, Any]:
         return {
             "steps": [asdict(step) for step in self.steps],
             "settings": asdict(self.settings),
@@ -162,7 +171,7 @@ class State:
         }
 
     @classmethod
-    def from_json(cls, data: dict) -> State:
+    def from_json(cls, data: dict[str, Any]) -> State:
         state = cls(
             steps=[Step(**step) for step in data["steps"]],
             settings=Settings(**data["settings"]),
@@ -180,7 +189,7 @@ def _format(value: date | None) -> str | None:
     return value.isoformat() if value else None
 
 
-def _parse(value, parser):
+def _parse[T](value: str | None, parser: Callable[[str], T]) -> T | None:
     return parser(value) if value else None
 
 

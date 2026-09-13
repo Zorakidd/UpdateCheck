@@ -1,10 +1,13 @@
 """The weekly update checklist window."""
 
 import time
+import tkinter
+from collections.abc import Callable
 from dataclasses import astuple
 from datetime import date
 from pathlib import Path
 from tkinter import messagebox
+from typing import Any, Protocol
 
 import customtkinter as ctk
 
@@ -45,27 +48,27 @@ def _font(size: int, bold: bool = False) -> ctk.CTkFont:
     return ctk.CTkFont(family="Segoe UI", size=size, weight="bold" if bold else "normal")
 
 
-def _secondary_button(master, **kwargs) -> ctk.CTkButton:
+def _secondary_button(master: Any, **kwargs: Any) -> ctk.CTkButton:
     return ctk.CTkButton(
         master, height=30, corner_radius=8, font=_font(13),
         fg_color=SUBTLE, hover_color=SUBTLE_HOVER, text_color=TEXT, **kwargs,
     )
 
 
-def _primary_button(master, **kwargs) -> ctk.CTkButton:
+def _primary_button(master: Any, **kwargs: Any) -> ctk.CTkButton:
     return ctk.CTkButton(
         master, height=34, corner_radius=8, font=_font(13, True),
         fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color="#FFFFFF", **kwargs,
     )
 
 
-def _card(master) -> ctk.CTkFrame:
+def _card(master: Any) -> ctk.CTkFrame:
     card = ctk.CTkFrame(master, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=12)
     card.pack(fill="x", pady=5)
     return card
 
 
-def _section(master, text: str) -> None:
+def _section(master: Any, text: str) -> None:
     ctk.CTkLabel(
         master, text=text.upper(), font=_font(11, True), text_color=MUTED, anchor="w", height=16,
     ).pack(fill="x", padx=4, pady=(18, 4))
@@ -92,10 +95,18 @@ def _place(window: ctk.CTk | ctk.CTkToplevel, width: int, height: int) -> None:
     window.geometry(f"{width}x{height}+{x}+{y}")
 
 
-def _reuse(widgets: list, steps: list[Step], create) -> list:
+class _StepWidget(Protocol):
+    """What `_reuse` needs of a widget: the step it shows, and a way to get rid of it."""
+
+    step: Step
+
+    def destroy(self) -> None: ...
+
+
+def _reuse[W: _StepWidget](widgets: list[W], steps: list[Step], create: Callable[[Step], W]) -> list[W]:
     """Return one widget per step, in order. Building a widget takes tens of milliseconds, so the widgets of
     unchanged steps are kept; the rest are made with `create(step)` or destroyed."""
-    unused: dict[tuple, list] = {}
+    unused: dict[tuple[Any, ...], list[W]] = {}
     for widget in widgets:
         unused.setdefault(astuple(widget.step), []).append(widget)
     kept = []
@@ -112,7 +123,7 @@ def _reuse(widgets: list, steps: list[Step], create) -> list:
     return kept
 
 
-def _pack_in_order(master, widgets: list, **options) -> None:
+def _pack_in_order(master: Any, widgets: list[Any], **options: Any) -> None:
     """Pack `widgets` into `master` in this order. Only widgets that are out of place are moved: re-packing
     every card made reordering a step 6-15x slower."""
     slaves = master.pack_slaves()
@@ -131,7 +142,7 @@ def _pack_in_order(master, widgets: list, **options) -> None:
 
 
 class StepCard(ctk.CTkFrame):
-    def __init__(self, master, step: Step, done: bool, on_toggle):
+    def __init__(self, master: Any, step: Step, done: bool, on_toggle: Callable[[str, bool], None]):
         # Colored up front rather than by _restyle(): recoloring a frame redraws it and all its children.
         super().__init__(
             master, fg_color=CARD_DONE if done else CARD, border_color=BORDER, border_width=1, corner_radius=12,
@@ -170,7 +181,7 @@ class StepCard(ctk.CTkFrame):
             widget.bind("<Button-1>", self._clicked)
         self.bind("<Configure>", self._wrap_detail)
 
-    def _clicked(self, _event) -> None:
+    def _clicked(self, _event: tkinter.Event[Any]) -> None:
         self.done.set(not self.done.get())
         self._toggled()
 
@@ -188,7 +199,7 @@ class StepCard(ctk.CTkFrame):
         self.configure(fg_color=CARD_DONE if done else CARD)
         self.title_label.configure(text_color=MUTED if done else TEXT)
 
-    def _wrap_detail(self, event) -> None:
+    def _wrap_detail(self, event: tkinter.Event[Any]) -> None:
         scaling = ctk.ScalingTracker.get_widget_scaling(self)
         # Checkbox column, the Open button column and a little slack so the text never touches the button.
         reserved = 176 if self.step.action else 80
@@ -204,7 +215,10 @@ class StepCard(ctk.CTkFrame):
 class GraphicsCard(StepCard):
     """The graphics drivers step: each graphics card with its driver's status and a button to get updates."""
 
-    def __init__(self, master, step: Step, done: bool, on_toggle, drivers: graphics.DriverChecks):
+    def __init__(
+        self, master: Any, step: Step, done: bool, on_toggle: Callable[[str, bool], None],
+        drivers: graphics.DriverChecks,
+    ):
         super().__init__(master, step, done, on_toggle)
         self.drivers = drivers
         self.rows: list[DriverRow] = []
@@ -240,7 +254,7 @@ class GraphicsCard(StepCard):
 class DriverRow(ctk.CTkFrame):
     """A graphics card in the graphics drivers step."""
 
-    def __init__(self, master, on_click):
+    def __init__(self, master: Any, on_click: Callable[[tkinter.Event[Any]], None]):
         super().__init__(master, fg_color="transparent")
         self.grid_columnconfigure(0, weight=1)
         self.name_label = ctk.CTkLabel(
@@ -267,7 +281,9 @@ class DriverRow(ctk.CTkFrame):
                 text, color = f"{driver} · Checking for updates…", MUTED
             case graphics.UP_TO_DATE:
                 text, color = f"{driver} · Up to date", SUCCESS_TEXT
-            case graphics.UPDATE_AVAILABLE:
+            # status() only reports an update when it has the release; without one, fall through to the
+            # generic "check for updates" line rather than failing to draw the card.
+            case graphics.UPDATE_AVAILABLE if release is not None:
                 text, color = f"{driver} · Update available: {release.version}", ACCENT
             case graphics.CHECK_FAILED:
                 text, color = f"{driver} · Couldn't check for updates", MUTED
@@ -291,13 +307,13 @@ class DriverRow(ctk.CTkFrame):
             text_color="#FFFFFF" if urgent else TEXT,
         )
 
-    def _wrap(self, _event) -> None:
+    def _wrap(self, _event: tkinter.Event[Any]) -> None:
         scaling = ctk.ScalingTracker.get_widget_scaling(self)
         wraplength = max((self.winfo_width() - self.button.winfo_width()) / scaling - 12, 120)
         self.name_label.configure(wraplength=wraplength)
         self.status_label.configure(wraplength=wraplength)
 
-    def _run(self, action, what: str) -> None:
+    def _run(self, action: Callable[[], None], what: str) -> None:
         try:
             action()
         except OSError as error:
@@ -479,7 +495,7 @@ class App(ctk.CTk):
                 self._refresh_drivers(recheck=True)
         self.after(60_000, self._tick)
 
-    def _focused(self, _event) -> None:
+    def _focused(self, _event: tkinter.Event[Any]) -> None:
         # Focus also moves between the window's own widgets, so re-detect at most every few seconds.
         if self._drivers_refreshed_at and time.monotonic() - self._drivers_refreshed_at > 3:
             self._refresh_drivers()
@@ -514,7 +530,9 @@ class App(ctk.CTk):
 class StepRow(ctk.CTkFrame):
     """A step in Settings, with buttons to move and remove it."""
 
-    def __init__(self, master, step: Step, on_move, on_remove):
+    def __init__(
+        self, master: Any, step: Step, on_move: Callable[[Step, int], None], on_remove: Callable[[Step], None],
+    ):
         super().__init__(master, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=12)
         self.step = step
         self.grid_columnconfigure(0, weight=1)
@@ -565,7 +583,7 @@ class SettingsWindow(ctk.CTkToplevel):
         _section(body, "Reminder")
         reminder = _card(body)
         reminder.grid_columnconfigure((0, 1), weight=1)
-        menu_style = {
+        menu_style: dict[str, Any] = {
             "height": 34, "corner_radius": 8, "font": _font(13), "dropdown_font": _font(13),
             "fg_color": SUBTLE, "button_color": SUBTLE, "button_hover_color": SUBTLE_HOVER, "text_color": TEXT,
             "dropdown_fg_color": CARD, "dropdown_hover_color": SUBTLE, "dropdown_text_color": TEXT,
@@ -600,7 +618,7 @@ class SettingsWindow(ctk.CTkToplevel):
 
         _section(body, "Add a step")
         form = _card(body)
-        entry_style = {
+        entry_style: dict[str, Any] = {
             "height": 36, "corner_radius": 8, "border_width": 1, "font": _font(13),
             "fg_color": BG, "border_color": BORDER, "text_color": TEXT, "placeholder_text_color": MUTED,
         }

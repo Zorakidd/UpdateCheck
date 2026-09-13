@@ -16,14 +16,13 @@ import re
 import threading
 import time
 import urllib.parse
-import urllib.request
 import winreg
-import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 
-from update_check.updater import USER_AGENT
+from update_check.system import USER_AGENT
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +120,7 @@ def detect() -> list[Card]:
     devices = _setupapi.SetupDiGetClassDevsW(ctypes.byref(_DISPLAY_CLASS), None, None, _DIGCF_PRESENT)
     if devices in (None, _INVALID_HANDLE):
         raise ctypes.WinError(ctypes.get_last_error())
-    cards = set()
+    cards: set[Card] = set()
     try:
         info = _DeviceInfo(size=ctypes.sizeof(_DeviceInfo))
         for index in itertools.count():
@@ -141,7 +140,7 @@ def vendor_of(hardware_id: str) -> str | None:
     return _VENDORS.get(match.group(1).upper()) if match else None
 
 
-def _card(devices, info: _DeviceInfo) -> Card | None:
+def _card(devices: int, info: _DeviceInfo) -> Card | None:
     vendor = vendor_of(_device_property(devices, info, _SPDRP_HARDWAREID))
     driver_key = _device_property(devices, info, _SPDRP_DRIVER)
     if vendor is None or not driver_key:
@@ -156,7 +155,7 @@ def _card(devices, info: _DeviceInfo) -> Card | None:
         return None
 
 
-def _device_property(devices, info: _DeviceInfo, prop: int) -> str:
+def _device_property(devices: int, info: _DeviceInfo, prop: int) -> str:
     buffer = ctypes.create_unicode_buffer(1024)
     found = _setupapi.SetupDiGetDeviceRegistryPropertyW(
         devices, ctypes.byref(info), prop, None, buffer, ctypes.sizeof(buffer), None,
@@ -175,6 +174,8 @@ def latest_nvidia_driver(card: Card) -> Release | None:
 
 def nvidia_product_id(products_xml: bytes, name: str) -> str | None:
     """Find a card in NVIDIA's product list, whose names may lack the "NVIDIA" prefix and memory size."""
+    import xml.etree.ElementTree as ET
+
     products: dict[str, str] = {}
     for product in ET.fromstring(products_xml).iter("LookupValue"):
         # Some cards are listed twice, as desktop and notebook products; both get the same driver version.
@@ -199,6 +200,11 @@ def parse_nvidia_driver(response: bytes) -> Release | None:
 
 
 def _download(url: str) -> bytes:
+    # urllib.request and ElementTree are imported where they are used rather than at the top of the module:
+    # together they cost a sixth of the time it takes to open the window, and only the driver lookup needs
+    # them, which already runs in a background thread waiting on the network.
+    import urllib.request
+
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=15) as response:
         return response.read()
@@ -222,7 +228,11 @@ class DriverChecks:
     # Seconds before a failed lookup is tried again, e.g. once the PC is back online.
     RETRY_AFTER = 60
 
-    def __init__(self, detect=detect, look_up=latest_nvidia_driver):
+    def __init__(
+        self,
+        detect: Callable[[], list[Card]] = detect,
+        look_up: Callable[[Card], Release | None] = latest_nvidia_driver,
+    ):
         self.cards: list[Card] = []
         self._detect = detect
         self._look_up = look_up

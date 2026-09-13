@@ -12,6 +12,8 @@ from pathlib import Path
 APP_NAME = "UpdateCheck"
 # The window title, which a second copy of the app also uses to find and focus the open window.
 TITLE = "Update Check"
+# How the app names itself to the servers it asks about updates: GitHub's releases and NVIDIA's driver search.
+USER_AGENT = "Update-Check"
 # True when running as the PyInstaller-built .exe rather than from source.
 FROZEN = getattr(sys, "frozen", False)
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
