@@ -10,6 +10,12 @@ single .exe that starts with Windows and keeps itself up to date from GitHub rel
 - Tick steps off as you go. **Open** jumps to the matching settings page or runs the step's command.
 - The checklist resets every week at the reminder day and time chosen in **Settings**, where you can
   also add, remove and reorder steps and switch between light and dark mode.
+- **What's actually waiting.** The Windows Update and Desktop apps steps say how much is queued up, for
+  example "4 upgrades waiting", looked up in the background while you read the rest. Neither tool has a
+  machine-readable count — winget prints a table in your own language and Windows Update answers only
+  through COM — so both are read defensively and say nothing rather than guess.
+- **Last done and streaks.** Each step remembers the day it was last ticked and says so when it has been
+  a while, and the header counts the weeks you have finished in a row.
 - **Graphics drivers.** This step lists the PC's NVIDIA, AMD and Intel graphics with their installed
   drivers. For NVIDIA it looks up the latest driver online, through the undocumented lookup behind
   NVIDIA's driver search, and says whether an update is available; AMD and Intel offer no such lookup.
@@ -22,11 +28,12 @@ single .exe that starts with Windows and keeps itself up to date from GitHub rel
   Task Scheduler task at the reminder hour (no admin rights needed), and re-registers them if the .exe
   has moved. Both run `UpdateCheck.exe --check`, which opens the window only while this week's checklist
   is unfinished, at most once a day. The **Automatic reminder** switch in the footer turns this off.
-- **Updates itself.** On every start the .exe asks GitHub for the latest release of
+- **Updates itself.** At most once a day the .exe asks GitHub for the latest release of
   `Zorakidd/Update-check` (`GITHUB_REPO` in [updater.py](src/update_check/updater.py)). If its tag is a
   newer version and an .exe is attached, the app downloads it, checks its size and SHA-256 digest, swaps
   it in for the running .exe and restarts with the same arguments. Failures are logged and never stop
-  the app.
+  the app. **Settings → Check now** asks straight away instead of waiting for the daily check. Asking
+  only once a day keeps both the request and the updater's own imports out of nearly every start.
 
 Steps and progress are stored in `%APPDATA%\UpdateCheck\state.json`, next to `update-check.log`. Set
 `UPDATE_CHECK_DATA` to use a different state file.

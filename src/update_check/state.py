@@ -106,6 +106,10 @@ class State:
     # Ids of the default steps this checklist has been offered, so a default step added in an update shows up
     # once in existing checklists, and stays away once removed.
     offered_steps: set[str] = field(default_factory=lambda: {step.id for step in default_steps()})
+    # The day each step was last ticked, so a step nobody has touched for months can say so.
+    last_done: dict[str, date] = field(default_factory=dict)
+    # The start of every weekly cycle that was finished, oldest first, for the streak.
+    completed_weeks: list[date] = field(default_factory=list)
 
     @property
     def is_complete(self) -> bool:
@@ -137,10 +141,34 @@ class State:
     def set_done(self, step_id: str, done: bool, now: datetime) -> None:
         if done:
             self.done.add(step_id)
+            self.last_done[step_id] = now.date()
         else:
             self.done.discard(step_id)
         if self.is_complete:
             self.last_completed = now
+            if self.cycle_start is not None and self.cycle_start not in self.completed_weeks:
+                self.completed_weeks.append(self.cycle_start)
+                # Five years is plenty to draw a streak from, and keeps the state file small.
+                del self.completed_weeks[:-260]
+        elif self.cycle_start is not None and self.completed_weeks[-1:] == [self.cycle_start]:
+            # Un-ticking a step takes this week back off the streak.
+            self.completed_weeks.pop()
+
+    def streak(self, now: datetime) -> int:
+        """How many weekly cycles in a row were finished, counting back from this one. A cycle counts when
+        a completion falls anywhere in its seven days, so moving the reminder day keeps the streak."""
+        def finished(start: date) -> bool:
+            return any(start <= week < start + timedelta(days=7) for week in self.completed_weeks)
+
+        start = self.current_cycle_start(now)
+        if not finished(start):
+            # This week isn't done yet, which doesn't break a streak until the week is over.
+            start -= timedelta(days=7)
+        streak = 0
+        while finished(start):
+            streak += 1
+            start -= timedelta(days=7)
+        return streak
 
     def should_remind(self, now: datetime) -> bool:
         """Whether a background check should open the window. Call `roll_over` first."""
@@ -168,6 +196,8 @@ class State:
             "last_completed": _format(self.last_completed),
             "last_reminded": _format(self.last_reminded),
             "offered_steps": sorted(self.offered_steps),
+            "last_done": {step: day.isoformat() for step, day in sorted(self.last_done.items())},
+            "completed_weeks": [week.isoformat() for week in self.completed_weeks],
         }
 
     @classmethod
@@ -180,6 +210,8 @@ class State:
             last_completed=_parse(data.get("last_completed"), datetime.fromisoformat),
             last_reminded=_parse(data.get("last_reminded"), _parse_date),
             offered_steps=set(data.get("offered_steps", _ORIGINAL_DEFAULT_STEPS)),
+            last_done={step: _parse_date(day) for step, day in data.get("last_done", {}).items()},
+            completed_weeks=[_parse_date(week) for week in data.get("completed_weeks", [])],
         )
         state.add_new_default_steps()
         return state

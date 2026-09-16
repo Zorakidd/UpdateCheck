@@ -85,7 +85,7 @@ def _find_update(installed: str) -> tuple[str, dict[str, Any]] | None:
     request = urllib.request.Request(
         RELEASES_URL, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with urllib.request.urlopen(request, timeout=5) as response:
         release = json.load(response)
     tag = release.get("tag_name", "")
     if not is_newer(tag, installed):

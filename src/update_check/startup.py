@@ -1,9 +1,14 @@
 """Start-up before the window opens: single instance, self-update, autostart and the reminder check."""
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from update_check import system
 from update_check.state import data_file, load, local_now, save
+
+# How long a background check waits before asking GitHub about a new release again. Releases are rare, and
+# skipping the question also skips importing the updater, which brings ssl, http, email, zipfile and shutil.
+_UPDATE_INTERVAL = timedelta(days=1)
 
 
 def _start_logging(path: Path) -> None:
@@ -18,6 +23,22 @@ def _start_logging(path: Path) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         level=logging.INFO,
     )
+
+
+def _update_due(data_dir: Path, now: datetime) -> bool:
+    """Whether this run should ask GitHub for a newer release. The time is recorded before the question is
+    asked, so a failed check waits for the next interval instead of retrying at every sign-in."""
+    marker = data_dir / "last-checked.txt"
+    try:
+        if now - datetime.fromisoformat(marker.read_text(encoding="utf-8").strip()) < _UPDATE_INTERVAL:
+            return False
+    except (OSError, ValueError):
+        pass
+    try:
+        marker.write_text(now.isoformat(), encoding="utf-8")
+    except OSError:
+        pass
+    return True
 
 
 def run(check_only: bool) -> None:
@@ -37,7 +58,8 @@ def run(check_only: bool) -> None:
     # Holding the lock means no other copy is running from the .exe that the update replaces. Only the .exe
     # updates itself, and importing the updater costs more than the rest of a background check put together,
     # so both are left out of runs from source and of the path that just focuses an already open window.
-    if system.FROZEN:
+    # Once a day is often enough to ask, which keeps that cost and an HTTPS round trip out of most runs.
+    if system.FROZEN and _update_due(path.parent, now):
         _start_logging(path)
         from update_check import updater
 
@@ -52,6 +74,8 @@ def run(check_only: bool) -> None:
         try:
             system.sync_autostart(data.settings.autostart, data.settings.hour)
         except OSError:
+            # The log file may not be open yet: most runs now skip the update check that opens it.
+            _start_logging(path)
             import logging
 
             logging.getLogger(__name__).exception("Couldn't register the app to start with Windows")

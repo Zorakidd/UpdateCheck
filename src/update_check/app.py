@@ -1,5 +1,8 @@
 """The weekly update checklist window."""
 
+import logging
+import queue
+import threading
 import time
 import tkinter
 from collections.abc import Callable
@@ -11,7 +14,7 @@ from typing import Any, Protocol
 
 import customtkinter as ctk
 
-from update_check import graphics, system
+from update_check import graphics, pending, system
 from update_check.state import (
     APPEARANCES,
     GRAPHICS_STEP,
@@ -23,6 +26,8 @@ from update_check.state import (
     save,
 )
 from update_check.system import TITLE
+
+log = logging.getLogger(__name__)
 
 HOURS = [f"{hour:02d}:00" for hour in range(24)]
 
@@ -76,6 +81,20 @@ def _section(master: Any, text: str) -> None:
 
 def _day(moment: date) -> str:
     return f"{moment:%b} {moment.day}"
+
+
+def _ago(day: date, today: date) -> str:
+    """How long ago a step was last ticked, in the roughest unit that still says something useful."""
+    days = (today - day).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 14:
+        return f"{days} days ago"
+    if days < 60:
+        return f"{days // 7} weeks ago"
+    return f"{days // 30} months ago"
 
 
 def _when(day: date, hour: int) -> str:
@@ -142,13 +161,19 @@ def _pack_in_order(master: Any, widgets: list[Any], **options: Any) -> None:
 
 
 class StepCard(ctk.CTkFrame):
-    def __init__(self, master: Any, step: Step, done: bool, on_toggle: Callable[[str, bool], None]):
+    def __init__(
+        self, master: Any, step: Step, done: bool, on_toggle: Callable[[str, bool], None],
+        last_done: date | None = None,
+    ):
         # Colored up front rather than by _restyle(): recoloring a frame redraws it and all its children.
         super().__init__(
             master, fg_color=CARD_DONE if done else CARD, border_color=BORDER, border_width=1, corner_radius=12,
         )
         self.step = step
         self.on_toggle = on_toggle
+        self.last_done = last_done
+        # What the meta line last said, so an unchanged card is never re-laid out.
+        self._meta_shown: tuple[str, tuple[str, str]] | None = None
         self.done = ctk.BooleanVar(value=done)
         self.grid_columnconfigure(1, weight=1)
 
@@ -162,6 +187,7 @@ class StepCard(ctk.CTkFrame):
         bottom_pad = 0 if step.detail else 14
         # Without an Open button the text would reach the card's right border and paint over it.
         right_pad = 0 if step.action else 16
+        self.right_pad = right_pad
         self.title_label = ctk.CTkLabel(
             self, text=step.title, font=_font(15, True), text_color=MUTED if done else TEXT, anchor="w", height=22,
         )
@@ -177,7 +203,10 @@ class StepCard(ctk.CTkFrame):
                 row=0, column=2, rowspan=2, padx=16,
             )
 
-        for widget in (self, self.title_label, self.detail_label):
+        # A third line under the step, for when it was last ticked and for what it has waiting.
+        self.meta_label = ctk.CTkLabel(self, font=_font(12), text_color=MUTED, anchor="w", height=18)
+
+        for widget in (self, self.title_label, self.detail_label, self.meta_label):
             widget.bind("<Button-1>", self._clicked)
         self.bind("<Configure>", self._wrap_detail)
 
@@ -186,13 +215,44 @@ class StepCard(ctk.CTkFrame):
         self._toggled()
 
     def _toggled(self) -> None:
+        if self.done.get():
+            self.last_done = local_now().date()
         self._restyle()
+        self.show_meta()
         self.on_toggle(self.step.id, self.done.get())
 
-    def set_done(self, done: bool) -> None:
+    def set_state(self, done: bool, last_done: date | None) -> None:
         if done != self.done.get():
             self.done.set(done)
             self._restyle()
+        self.last_done = last_done
+        self.show_meta()
+
+    def _meta(self) -> tuple[str, tuple[str, str]]:
+        """What the third line says, and its colour."""
+        if self.last_done is None:
+            return "", MUTED
+        return f"Last done {_ago(self.last_done, local_now().date())}", MUTED
+
+    def show_meta(self) -> None:
+        text, color = self._meta()
+        if (text, color) == self._meta_shown:
+            return
+        self._meta_shown = (text, color)
+        if text:
+            self.meta_label.configure(text=text, text_color=color)
+            self.meta_label.grid(row=2, column=1, sticky="ew", padx=(0, self.right_pad), pady=(0, 14))
+        else:
+            self.meta_label.grid_forget()
+        self._close_above(above_meta=bool(text))
+
+    def _close_above(self, above_meta: bool) -> None:
+        """Keep the card's bottom padding on whichever row is last."""
+        pad = 2 if above_meta else 14
+        if self.step.detail:
+            self.detail_label.grid_configure(pady=(0, pad))
+        else:
+            self.title_label.grid_configure(pady=(14, pad))
 
     def _restyle(self) -> None:
         done = self.done.get()
@@ -217,10 +277,10 @@ class GraphicsCard(StepCard):
 
     def __init__(
         self, master: Any, step: Step, done: bool, on_toggle: Callable[[str, bool], None],
-        drivers: graphics.DriverChecks,
+        last_done: date | None, drivers: graphics.DriverChecks,
     ):
-        super().__init__(master, step, done, on_toggle)
         self.drivers = drivers
+        super().__init__(master, step, done, on_toggle, last_done)
         self.rows: list[DriverRow] = []
         # Level with the title, not centered on a card that grows with each graphics card.
         self.checkbox.grid_configure(sticky="n", pady=(13, 14))
@@ -234,6 +294,10 @@ class GraphicsCard(StepCard):
         )
         self.empty_label.bind("<Button-1>", self._clicked)
         self.show()
+
+    def _close_above(self, above_meta: bool) -> None:
+        # The driver rows sit where the detail line would, so they carry the card's bottom padding.
+        self.rows_frame.grid_configure(pady=(0, 2 if above_meta else 14))
 
     def show(self) -> None:
         cards = self.drivers.cards
@@ -249,6 +313,33 @@ class GraphicsCard(StepCard):
             self.empty_label.grid_forget()
         else:
             self.empty_label.grid(row=0, column=0, sticky="ew")
+
+
+class PendingCard(StepCard):
+    """A step that can say how much is actually waiting, such as winget upgrades or Windows updates."""
+
+    def __init__(
+        self, master: Any, step: Step, done: bool, on_toggle: Callable[[str, bool], None],
+        last_done: date | None, checks: pending.PendingChecks,
+    ):
+        self.checks = checks
+        super().__init__(master, step, done, on_toggle, last_done)
+
+    def _meta(self) -> tuple[str, tuple[str, str]]:
+        status, count = self.checks.status(self.step.id)
+        match status:
+            case pending.CHECKING:
+                text, color = "Checking…", MUTED
+            case pending.PENDING:
+                text, color = pending.describe(self.step.id, count), ACCENT
+            case pending.NOTHING_PENDING:
+                text, color = "Nothing waiting", SUCCESS_TEXT
+            case _:
+                text, color = "", MUTED
+        last, _ = super()._meta()
+        if text and last:
+            return f"{text} · {last[0].lower()}{last[1:]}", color
+        return (text or last), (color if text else MUTED)
 
 
 class DriverRow(ctk.CTkFrame):
@@ -344,9 +435,10 @@ class App(ctk.CTk):
             self.steps_frame, text="No steps yet. Add some in Settings.", font=_font(13), text_color=MUTED,
         )
         self.drivers = graphics.DriverChecks()
-        # When the graphics cards were last detected; 0 until the checklist first shows the graphics step.
-        self._drivers_refreshed_at = 0.0
-        self._polling_drivers = False
+        self.pending = pending.PendingChecks()
+        # When the steps were last looked into; 0 until the checklist first shows a step that needs it.
+        self._checked_at = 0.0
+        self._polling = False
 
         self.render()
         self.after(60_000, self._tick)
@@ -401,13 +493,14 @@ class App(ctk.CTk):
         self.last_label.grid(row=1, column=2, sticky="e")
 
     def render(self) -> None:
-        if not self._drivers_refreshed_at and any(step.id == GRAPHICS_STEP for step in self.data.steps):
-            # Only a checklist with the graphics step looks at the graphics cards and asks NVIDIA online.
-            self._refresh_drivers()
+        # A step only costs a lookup while the checklist still has it, so adding one back starts it again.
+        reports = {GRAPHICS_STEP} | pending.LOOKUPS.keys()
+        if not self._checked_at and any(step.id in reports for step in self.data.steps):
+            self._refresh_checks()
         done = self.data.done
         self.cards = _reuse(self.cards, self.data.steps, self._make_card)
         for card in self.cards:
-            card.set_done(card.step.id in done)
+            card.set_state(card.step.id in done, self.data.last_done.get(card.step.id))
         if self.cards:
             self.empty_label.pack_forget()
         else:
@@ -417,9 +510,12 @@ class App(ctk.CTk):
 
     def _make_card(self, step: Step) -> StepCard:
         done = step.id in self.data.done
+        last_done = self.data.last_done.get(step.id)
         if step.id == GRAPHICS_STEP:
-            return GraphicsCard(self.steps_frame, step, done, self._step_toggled, self.drivers)
-        return StepCard(self.steps_frame, step, done, self._step_toggled)
+            return GraphicsCard(self.steps_frame, step, done, self._step_toggled, last_done, self.drivers)
+        if step.id in pending.LOOKUPS:
+            return PendingCard(self.steps_frame, step, done, self._step_toggled, last_done, self.pending)
+        return StepCard(self.steps_frame, step, done, self._step_toggled, last_done)
 
     def _refresh_summary(self) -> None:
         now = local_now()
@@ -428,14 +524,21 @@ class App(ctk.CTk):
         total = len(data.steps)
         done = sum(step.id in data.done for step in data.steps)
 
+        streak = data.streak(now)
+        # One finished week isn't a run worth mentioning yet.
+        run = f"{streak} weeks running" if streak >= 2 else ""
         if data.is_complete:
             self.headline.configure(text="All caught up")
-            self.summary.configure(text=f"Nice work. Next check is {_when(data.next_reminder(now), settings.hour)}.")
+            nice = f"Nice work — {run}." if run else "Nice work."
+            self.summary.configure(
+                text=f"{nice} Next check is {_when(data.next_reminder(now), settings.hour)}.",
+            )
             self.progress.configure(progress_color=SUCCESS)
         else:
             self.headline.configure(text="Time for updates")
             week = data.cycle_start or data.current_cycle_start(now)
-            self.summary.configure(text=f"{done} of {total} steps done · week of {_day(week)}")
+            weeks = f" · {run}" if run else ""
+            self.summary.configure(text=f"{done} of {total} steps done · week of {_day(week)}{weeks}")
             self.progress.configure(progress_color=ACCENT)
         self.progress.set(done / total if total else 0)
 
@@ -490,36 +593,47 @@ class App(ctk.CTk):
         if self.data.roll_over(local_now()):
             self.save()
             self.render()
-            if self._drivers_refreshed_at:
-                # NVIDIA may have released a driver since the last lookup.
-                self._refresh_drivers(recheck=True)
+            if self._checked_at:
+                # A week on, there may be a new driver, new packages and new Windows updates.
+                self._refresh_checks(recheck=True)
         self.after(60_000, self._tick)
 
     def _focused(self, _event: tkinter.Event[Any]) -> None:
         # Focus also moves between the window's own widgets, so re-detect at most every few seconds.
-        if self._drivers_refreshed_at and time.monotonic() - self._drivers_refreshed_at > 3:
-            self._refresh_drivers()
+        if self._checked_at and time.monotonic() - self._checked_at > 3:
+            self._refresh_checks()
 
-    def _refresh_drivers(self, recheck: bool = False) -> None:
-        self._drivers_refreshed_at = time.monotonic()
-        if self.drivers.refresh(recheck):
+    def _refresh_checks(self, recheck: bool = False) -> None:
+        """Look into the steps that can report something, in the background."""
+        self._checked_at = time.monotonic()
+        ids = {step.id for step in self.data.steps}
+        if GRAPHICS_STEP in ids and self.drivers.refresh(recheck):
             self._show_drivers()
-        if self.drivers.busy and not self._polling_drivers:
-            self._polling_drivers = True
-            self.after(200, self._poll_drivers)
+        if self.pending.refresh(ids, recheck):
+            self._show_pending()
+        if not self._polling and (self.drivers.busy or self.pending.busy):
+            self._polling = True
+            self.after(200, self._poll)
 
-    def _poll_drivers(self) -> None:
+    def _poll(self) -> None:
         if self.drivers.collect():
             self._show_drivers()
-        if self.drivers.busy:
-            self.after(200, self._poll_drivers)
+        if self.pending.collect():
+            self._show_pending()
+        if self.drivers.busy or self.pending.busy:
+            self.after(200, self._poll)
         else:
-            self._polling_drivers = False
+            self._polling = False
 
     def _show_drivers(self) -> None:
         for card in self.cards:
             if isinstance(card, GraphicsCard):
                 card.show()
+
+    def _show_pending(self) -> None:
+        for card in self.cards:
+            if isinstance(card, PendingCard):
+                card.show_meta()
 
     def _bring_to_front(self) -> None:
         self.attributes("-topmost", True)
@@ -636,6 +750,21 @@ class SettingsWindow(ctk.CTkToplevel):
             side="right",
         )
 
+        _section(body, "This app")
+        updates = _card(body)
+        updates.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            updates, text="Updates", font=_font(14, True), text_color=TEXT, anchor="w", height=20,
+        ).grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=(14, 0))
+        self.update_status = ctk.CTkLabel(
+            updates, font=_font(12), text_color=MUTED, anchor="w", justify="left", wraplength=290,
+            text="The app looks for a new version once a day and installs it by itself.",
+        )
+        self.update_status.grid(row=1, column=0, sticky="ew", padx=(16, 8), pady=(0, 14))
+        self.update_button = _secondary_button(updates, text="Check now", width=100, command=self._check_now)
+        self.update_button.grid(row=0, column=1, rowspan=2, padx=(0, 16))
+        self._update_result: queue.SimpleQueue[bool | None] = queue.SimpleQueue()
+
         _section(body, "Troubleshooting")
         repair = _card(body)
         repair.grid_columnconfigure(0, weight=1)
@@ -721,6 +850,42 @@ class SettingsWindow(ctk.CTkToplevel):
         if messagebox.askyesno(TITLE, "Replace your checklist with the default steps?", parent=self):
             self.app.data.steps = default_steps()
             self._changed()
+
+    def _check_now(self) -> None:
+        """Ask GitHub for a newer release now, rather than waiting for the daily check."""
+        if not system.FROZEN:
+            self.update_status.configure(text="Only the installed app updates itself, not a run from source.")
+            return
+        self.update_button.configure(state="disabled")
+        self.update_status.configure(text="Checking…", text_color=MUTED)
+        # In a thread: the lookup waits on the network, and a new version is a whole .exe to download.
+        threading.Thread(target=self._look_for_update, daemon=True).start()
+        self.after(200, self._collect_update)
+
+    def _look_for_update(self) -> None:
+        from update_check import updater
+
+        try:
+            self._update_result.put(updater.self_update(self.app.path.parent))
+        except Exception:
+            log.warning("The update check failed", exc_info=True)
+            self._update_result.put(None)
+
+    def _collect_update(self) -> None:
+        if not self.winfo_exists():
+            return
+        try:
+            installed = self._update_result.get_nowait()
+        except queue.Empty:
+            self.after(200, self._collect_update)
+            return
+        self.update_button.configure(state="normal")
+        if installed:
+            self.update_status.configure(text="An update was installed. Restart to use it.", text_color=ACCENT)
+        elif installed is None:
+            self.update_status.configure(text="Couldn't check. The log has the details.", text_color=MUTED)
+        else:
+            self.update_status.configure(text="This is the newest version.", text_color=MUTED)
 
     def _repair_windows(self) -> None:
         try:
