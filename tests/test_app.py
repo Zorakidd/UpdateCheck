@@ -1,6 +1,10 @@
 import struct
+from datetime import date
 
-from update_check.app import ICON, _reuse
+import pytest
+
+from update_check import pending
+from update_check.app import ICON, _reuse, windows_update_text
 from update_check.state import Step
 
 
@@ -45,6 +49,19 @@ def test_identical_steps_each_keep_a_widget_pointing_at_their_own_step():
     assert kept[0].step is second
     assert kept[1].step is first
     assert not any(widget.destroyed for widget in widgets)
+
+
+@pytest.mark.parametrize(
+    ("status", "count", "installed", "restart", "text"),
+    [
+        (pending.CHECKING, 0, None, False, "Asking Windows Update…"),
+        (pending.NOTHING_PENDING, 0, date(2026, 11, 3), False, "Up to date\nLast installed Nov 3, 2026"),
+        (pending.PENDING, 3, None, True, "3 updates waiting\nRestart to finish installing updates"),
+        (pending.CHECK_FAILED, 0, None, False, "Couldn't ask Windows Update"),
+    ],
+)
+def test_the_pc_info_tab_says_how_current_windows_is(status, count, installed, restart, text):
+    assert windows_update_text(status, count, installed, restart) == text
 
 
 def test_the_icon_has_the_sizes_windows_asks_for():

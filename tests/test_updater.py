@@ -1,7 +1,10 @@
 import hashlib
+import urllib.error
+from email.message import Message
 
 import pytest
 
+from update_check import updater
 from update_check.updater import is_newer, verify
 
 EXE = b"MZ" + bytes(100)
@@ -40,3 +43,26 @@ def test_verify_rejects_non_executable():
 def test_verify_rejects_digest_mismatch():
     with pytest.raises(ValueError, match="SHA-256"):
         verify(EXE, {"name": "UpdateCheck.exe", "size": len(EXE), "digest": "sha256:" + "0" * 64})
+
+
+def test_verify_rejects_a_download_without_a_digest():
+    with pytest.raises(ValueError, match="without a SHA-256 digest"):
+        verify(EXE, {"name": "UpdateCheck.exe", "size": len(EXE)})
+
+
+def _github_answers(monkeypatch, code):
+    def urlopen(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, code, "error", Message(), None)
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", urlopen)
+
+
+def test_a_repository_without_releases_has_nothing_to_update_to(monkeypatch):
+    _github_answers(monkeypatch, 404)
+    assert updater._find_update("0.1.0") is None
+
+
+def test_other_github_errors_still_count_as_failures(monkeypatch):
+    _github_answers(monkeypatch, 503)
+    with pytest.raises(urllib.error.HTTPError):
+        updater._find_update("0.1.0")

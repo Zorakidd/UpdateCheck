@@ -1,5 +1,6 @@
 """Start-up before the window opens: single instance, self-update, autostart and the reminder check."""
 
+import ctypes
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -9,6 +10,9 @@ from update_check.state import data_file, load, local_now, save
 # How long a background check waits before asking GitHub about a new release again. Releases are rare, and
 # skipping the question also skips importing the updater, which brings ssl, http, email, zipfile and shutil.
 _UPDATE_INTERVAL = timedelta(days=1)
+# The log is kept to about this size, with the one before it beside it as update-check.log.1.
+_LOG_LIMIT = 1024 * 1024
+_MB_ICONERROR = 0x10
 
 
 def _start_logging(path: Path) -> None:
@@ -17,12 +21,24 @@ def _start_logging(path: Path) -> None:
     Safe to call twice: basicConfig does nothing once the root logger has a handler."""
     import logging
 
+    log_file = path.with_name("update-check.log")
+    rotate(log_file)
     logging.basicConfig(
-        filename=path.with_name("update-check.log"),
+        filename=log_file,
         encoding="utf-8",
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         level=logging.INFO,
     )
+
+
+def rotate(log_file: Path) -> None:
+    """Move a log that has outgrown _LOG_LIMIT aside, replacing the one moved aside before it."""
+    try:
+        if log_file.stat().st_size > _LOG_LIMIT:
+            log_file.replace(log_file.with_name(log_file.name + ".1"))
+    except OSError:
+        # Missing, or open in the window's process: the next start tries again.
+        pass
 
 
 def _update_due(data_dir: Path, now: datetime) -> bool:
@@ -43,6 +59,25 @@ def _update_due(data_dir: Path, now: datetime) -> bool:
 
 def run(check_only: bool) -> None:
     """Open the checklist. With `check_only`, open it only when this week's check still needs a reminder."""
+    try:
+        _run(check_only)
+    except Exception:
+        # The .exe has no console for the traceback: the log keeps it for whoever supports the PC.
+        _start_logging(data_file())
+        import logging
+
+        logging.getLogger(__name__).exception("Update Check stopped on an unexpected error")
+        if not system.FROZEN:
+            raise
+        if not check_only:
+            # Opened by hand, so someone is waiting for the window. A background check stays quiet.
+            log_file = data_file().with_name("update-check.log")
+            message = f"Update Check couldn't start because of an unexpected error. The details are in\n{log_file}"
+            ctypes.windll.user32.MessageBoxW(None, message, system.TITLE, _MB_ICONERROR)
+        raise SystemExit(1) from None
+
+
+def _run(check_only: bool) -> None:
     path = data_file()
     now = local_now()
     lock = system.claim_single_instance()
@@ -58,8 +93,9 @@ def run(check_only: bool) -> None:
     # Holding the lock means no other copy is running from the .exe that the update replaces. Only the .exe
     # updates itself, and importing the updater costs more than the rest of a background check put together,
     # so both are left out of runs from source and of the path that just focuses an already open window.
-    # Once a day is often enough to ask, which keeps that cost and an HTTPS round trip out of most runs.
-    if system.FROZEN and _update_due(path.parent, now):
+    # Once a day is often enough to ask, which keeps that cost and an HTTPS round trip out of most runs. Where
+    # an administrator rolls out new versions themselves, it isn't asked at all.
+    if system.FROZEN and system.self_update_allowed() and _update_due(path.parent, now):
         _start_logging(path)
         from update_check import updater
 

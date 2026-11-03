@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from importlib import metadata
 from pathlib import Path
@@ -85,8 +86,14 @@ def _find_update(installed: str) -> tuple[str, dict[str, Any]] | None:
     request = urllib.request.Request(
         RELEASES_URL, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
     )
-    with urllib.request.urlopen(request, timeout=5) as response:
-        release = json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            release = json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            # The repository has no release yet, so there is nothing to update to.
+            return None
+        raise
     tag = release.get("tag_name", "")
     if not is_newer(tag, installed):
         return None
@@ -123,9 +130,13 @@ def verify(content: bytes, asset: dict[str, Any]) -> None:
     if len(content) != asset.get("size", len(content)) or not content.startswith(b"MZ"):
         message = f"{name} is incomplete or not a Windows executable"
         raise ValueError(message)
-    # GitHub publishes a "sha256:<hex>" digest for each release asset.
+    # GitHub publishes a "sha256:<hex>" digest for each release asset. A download that can't be checked against
+    # one isn't run.
     algorithm, _, expected = (asset.get("digest") or "").partition(":")
-    if algorithm == "sha256" and hashlib.sha256(content).hexdigest() != expected:
+    if algorithm != "sha256":
+        message = f"{name} comes without a SHA-256 digest to check it against"
+        raise ValueError(message)
+    if hashlib.sha256(content).hexdigest() != expected:
         message = f"{name} doesn't match the release's SHA-256 digest"
         raise ValueError(message)
 

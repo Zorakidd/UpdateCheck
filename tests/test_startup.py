@@ -89,6 +89,55 @@ def test_later_starts_apply_the_answer(start_exe):
     assert registered == [False]
 
 
+def test_where_an_administrator_rolls_out_versions_github_isnt_asked(start_exe, monkeypatch):
+    asked = []
+    monkeypatch.setattr(startup, "_update_due", lambda *args: asked.append(1) or False)
+    monkeypatch.setattr(system, "self_update_allowed", lambda: False)
+    start_exe()
+    assert asked == []
+
+
+def test_an_outgrown_log_is_moved_aside(tmp_path, monkeypatch):
+    log = tmp_path / "update-check.log"
+    log.write_text("old\n" * 10, encoding="utf-8")
+    startup.rotate(log)
+    assert log.exists()
+
+    monkeypatch.setattr(startup, "_LOG_LIMIT", 5)
+    startup.rotate(log)
+    assert not log.exists()
+    assert (tmp_path / "update-check.log.1").read_text(encoding="utf-8").startswith("old")
+
+
+def _crash(check_only: bool) -> None:
+    raise RuntimeError("boom")
+
+
+def test_an_unexpected_error_in_the_exe_is_logged_not_shown_as_a_traceback(monkeypatch, caplog, tmp_path):
+    monkeypatch.setenv("UPDATE_CHECK_DATA", str(tmp_path / "state.json"))
+    monkeypatch.setattr(startup, "_run", _crash)
+    monkeypatch.setattr(startup, "_start_logging", lambda path: None)
+    monkeypatch.setattr(system, "FROZEN", True)
+
+    # A background check: nobody is waiting for a window, so no message either.
+    with pytest.raises(SystemExit) as stopped:
+        startup.run(check_only=True)
+
+    assert stopped.value.code == 1
+    assert "stopped on an unexpected error" in caplog.text
+    assert "RuntimeError: boom" in caplog.text
+
+
+def test_run_from_source_an_unexpected_error_still_shows_its_traceback(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPDATE_CHECK_DATA", str(tmp_path / "state.json"))
+    monkeypatch.setattr(startup, "_run", _crash)
+    monkeypatch.setattr(startup, "_start_logging", lambda path: None)
+    monkeypatch.setattr(system, "FROZEN", False)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        startup.run(check_only=False)
+
+
 def test_a_reminder_waits_while_a_game_or_presentation_is_full_screen(start_exe, monkeypatch):
     monkeypatch.setattr(system, "user_is_busy", lambda: True)
     _, opened = start_exe(State(settings=Settings(autostart=True)), check_only=True)

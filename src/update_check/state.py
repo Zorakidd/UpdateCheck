@@ -12,6 +12,8 @@ WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", 
 APPEARANCES = ("System", "Light", "Dark")
 # The step that lists the PC's graphics cards with their driver status, instead of a fixed description.
 GRAPHICS_STEP = "graphics"
+# The step that says how much room is left on the system drive.
+STORAGE_STEP = "storage"
 # The default steps from before checklists recorded which default steps they had been offered.
 _ORIGINAL_DEFAULT_STEPS = ("windows-update", "drivers", "store", "winget", "defender", "backup")
 
@@ -75,7 +77,7 @@ def default_steps() -> list[Step]:
             "Free up space",
             "Delete temporary files, or turn on Storage Sense to do it automatically.",
             "ms-settings:storagesense",
-            id="storage",
+            id=STORAGE_STEP,
         ),
         Step(
             "Backups",

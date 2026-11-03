@@ -1,7 +1,20 @@
+from datetime import date
+
 import pytest
 
 from update_check import pcinfo
-from update_check.pcinfo import as_text, bios_version, model, size, windows_name
+from update_check.pcinfo import (
+    Section,
+    age,
+    as_text,
+    bios_page,
+    bios_version,
+    management,
+    model,
+    windows_name,
+)
+
+ASROCK = {"SystemManufacturer": "ASRock", "SystemProductName": "Z690 PG Velocita"}
 
 
 def test_windows_11_is_told_apart_by_its_build_number():
@@ -40,32 +53,69 @@ def test_model_names_maker_and_model_or_the_mainboard_of_a_pc_built_from_parts(b
     assert model(bios) == expected
 
 
-def test_bios_version_comes_with_its_release_date():
-    assert bios_version({"BIOSVersion": "22.02", "BIOSReleaseDate": "09/25/2025"}) == "22.02 · Sep 25, 2025"
-    assert bios_version({"BIOSVersion": "1.12.0", "BIOSReleaseDate": "sometime"}) == "1.12.0 · sometime"
-    assert bios_version({"BIOSVersion": "F12"}) == "F12"
+def test_bios_version_comes_with_its_release_date_and_age():
+    today = date(2026, 11, 3)
+    assert bios_version({"BIOSVersion": "22.02", "BIOSReleaseDate": "09/25/2025"}, today) == (
+        "22.02 · Sep 25, 2025 (13 months old)"
+    )
+    assert bios_version({"BIOSVersion": "1.12.0", "BIOSReleaseDate": "sometime"}, today) == "1.12.0 · sometime"
+    assert bios_version({"BIOSVersion": "F12"}, today) == "F12"
 
 
 @pytest.mark.parametrize(
-    ("count", "text"),
+    ("day", "text"),
     [
-        (32 * 1024**3, "32 GB"),
-        (int(15.9 * 1024**3), "15.9 GB"),
-        (8 * 1024**3, "8 GB"),
-        (954 * 1024**3, "954 GB"),
-        (1862 * 1024**3, "1.82 TB"),
+        (date(2026, 10, 20), "less than a month old"),
+        (date(2026, 10, 3), "1 month old"),
+        (date(2025, 9, 25), "13 months old"),
+        (date(2023, 1, 1), "3 years old"),
     ],
 )
-def test_sizes_are_given_to_three_figures(count, text):
-    assert size(count) == text
+def test_age_is_given_in_months_then_years(day, text):
+    assert age(day, date(2026, 11, 3)) == text
+
+
+def test_brand_pcs_get_their_makers_support_site_and_others_a_search_for_their_model():
+    assert bios_page({"SystemManufacturer": "Dell Inc.", "SystemProductName": "XPS 15"}).startswith(
+        "https://www.dell.com/",
+    )
+    assert bios_page({"SystemManufacturer": "HP", "SystemProductName": "HP EliteBook"}).startswith(
+        "https://support.hp.com/",
+    )
+    assert bios_page({"SystemManufacturer": "Microsoft Corporation"}) == "ms-settings:windowsupdate"
+    assert bios_page(ASROCK) == "https://www.bing.com/search?q=ASRock+Z690+PG+Velocita+BIOS+update"
+
+
+@pytest.mark.parametrize(
+    ("domain", "tenant", "text"),
+    [
+        (None, None, "Not managed by an organization"),
+        ("CONTOSO", None, "CONTOSO (Active Directory)"),
+        (None, "Contoso", "Contoso (Microsoft Entra ID)"),
+        (None, "", "Microsoft Entra ID"),
+        ("CONTOSO", "Contoso", "Contoso (Microsoft Entra ID)\nCONTOSO (Active Directory)"),
+    ],
+)
+def test_who_manages_the_pc(domain, tenant, text):
+    assert management(domain, tenant) == text
 
 
 def test_the_clipboard_gets_a_line_per_row():
-    sections = [("Device", [("Name", "PC"), ("Processor", "Intel\n12 cores")]), ("Firmware", [("TPM", "2.0")])]
+    sections = [
+        Section("Device", [("Name", "PC"), ("Processor", "Intel\n12 cores")]),
+        Section("Firmware", [("TPM", "2.0")], action=("Find BIOS updates", "https://example.com")),
+    ]
     assert as_text(sections) == "Device\nName: PC\nProcessor: Intel, 12 cores\n\nFirmware\nTPM: 2.0"
 
 
 def test_reading_this_pc_leaves_no_row_empty():
-    sections = pcinfo.gather()
-    assert sections[0][0] == "Device"
-    assert all(rows and all(value for _, value in rows) for _, rows in sections)
+    sections = pcinfo.gather(updates="Up to date")
+    assert [section.title for section in sections][:1] == ["Device"]
+    assert all(section.rows and all(value for _, value in section.rows) for section in sections)
+    windows = next(section for section in sections if section.title == "Windows")
+    assert ("Updates", "Up to date") in windows.rows
+    assert any(label == "Managed by" for label, _ in windows.rows)
+
+
+def test_restart_pending_is_read_without_error():
+    assert isinstance(pcinfo.restart_pending(), bool)

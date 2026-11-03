@@ -10,6 +10,7 @@ from dataclasses import astuple
 from datetime import date
 from pathlib import Path
 from tkinter import messagebox
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Protocol
 
 import customtkinter as ctk
@@ -18,6 +19,7 @@ from update_check import graphics, pending, system
 from update_check.state import (
     APPEARANCES,
     GRAPHICS_STEP,
+    STORAGE_STEP,
     WEEKDAYS,
     State,
     Step,
@@ -36,6 +38,9 @@ HOURS = [f"{hour:02d}:00" for hour in range(24)]
 # The icon for the title bar and the taskbar. It sits next to this module, and the .exe's build puts it there too.
 ICON = Path(__file__).with_name("icon.ico")
 CHECKLIST_TAB, INFO_TAB = "Checklist", "PC info"
+# Less free space than this on the system drive is worth a word: Windows wants about as much to install a new
+# version of itself.
+LOW_SPACE = 20 * 1024**3
 # How each tab's page fills the window between the header and the footer.
 _PAGE: dict[str, Any] = {"fill": "both", "expand": True, "padx": (20, 12), "pady": (0, 12)}
 
@@ -367,6 +372,22 @@ class PendingCard(StepCard):
         return (text or last), (color if text else MUTED)
 
 
+class StorageCard(StepCard):
+    """The free-up-space step, which says how much room is left on the drive Windows is on."""
+
+    def _meta(self) -> tuple[str, tuple[str, str]]:
+        last, _ = super()._meta()
+        space = system.system_drive_space()
+        if space is None:
+            return last, MUTED
+        drive, free, _ = space
+        low = free < LOW_SPACE
+        text = f"{'Only ' if low else ''}{system.size(free)} free on {drive}"
+        if last:
+            text = f"{text} · {last[0].lower()}{last[1:]}"
+        return text, (ACCENT if low else MUTED)
+
+
 class DriverRow(ctk.CTkFrame):
     """A graphics card in the graphics drivers step."""
 
@@ -436,25 +457,42 @@ class DriverRow(ctk.CTkFrame):
             messagebox.showerror(TITLE, f"Couldn't open {what}.\n\n{error}", parent=self)
 
 
+def windows_update_text(status: str, count: int, last_installed: date | None, restart: bool) -> str:
+    """What the PC info tab says about Windows Update: whether anything is waiting, whether a restart is, and
+    when updates were last installed."""
+    lines = [{
+        pending.CHECKING: "Asking Windows Update…",
+        pending.NOTHING_PENDING: "Up to date",
+        pending.PENDING: pending.describe(pending.WINDOWS_UPDATE, count),
+    }.get(status, "Couldn't ask Windows Update")]
+    if restart:
+        lines.append("Restart to finish installing updates")
+    if last_installed:
+        lines.append(f"Last installed {_day(last_installed)}, {last_installed.year}")
+    return "\n".join(lines)
+
+
 def _layout(sections: list[pcinfo.Section]) -> list[tuple[str, list[str]]]:
     """The section titles and row labels, without the values."""
-    return [(title, [label for label, _ in rows]) for title, rows in sections]
+    return [(section.title, [label for label, _ in section.rows]) for section in sections]
 
 
 class InfoCard(ctk.CTkFrame):
-    """A section of the PC info tab: a label and a value on each row."""
+    """A section of the PC info tab: a label and a value on each row, and perhaps a button under them."""
 
     LABEL_WIDTH = 96
     # The label column and the padding on either side of both columns.
     RESERVED = 16 + LABEL_WIDTH + 12 + 16
 
-    def __init__(self, master: Any, rows: list[tuple[str, str]]):
+    def __init__(self, master: Any, section: pcinfo.Section):
         super().__init__(master, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=12)
         self.grid_columnconfigure(1, weight=1)
         self.values: dict[str, ctk.CTkLabel] = {}
         self._wraplength = 0.0
+        rows = section.rows
         for row, (label, value) in enumerate(rows):
-            pady = (14 if row == 0 else 3, 14 if row == len(rows) - 1 else 3)
+            closes_card = row == len(rows) - 1 and section.action is None
+            pady = (14 if row == 0 else 3, 14 if closes_card else 3)
             # Level with the first line of a value that runs over several.
             ctk.CTkLabel(
                 self, text=label, font=_font(12), text_color=MUTED, anchor="w", width=self.LABEL_WIDTH, height=20,
@@ -463,7 +501,17 @@ class InfoCard(ctk.CTkFrame):
                 self, text=value, font=_font(13), text_color=TEXT, anchor="w", justify="left", height=20,
             )
             self.values[label].grid(row=row, column=1, sticky="ew", padx=(0, 16), pady=pady)
+        if section.action is not None:
+            text, target = section.action
+            _secondary_button(self, text=text, command=lambda: self._open(target)).grid(
+                row=len(rows), column=1, sticky="w", pady=(10, 14),
+            )
         self.bind("<Configure>", self._wrap)
+
+    def show(self, label: str, value: str) -> None:
+        # Only when it changed: each change redraws the label.
+        if self.values[label].cget("text") != value:
+            self.values[label].configure(text=value)
 
     def _wrap(self, event: tkinter.Event[Any]) -> None:
         wraplength = max(event.width / ctk.ScalingTracker.get_widget_scaling(self) - self.RESERVED, 120)
@@ -473,44 +521,66 @@ class InfoCard(ctk.CTkFrame):
             for label in self.values.values():
                 label.configure(wraplength=wraplength)
 
+    def _open(self, target: str) -> None:
+        try:
+            system.open_action(target)
+        except OSError as error:
+            messagebox.showerror(TITLE, f"Couldn't open “{target}”.\n\n{error}", parent=self)
+
 
 class InfoPage(ctk.CTkScrollableFrame):
-    """The PC info tab: what this PC is, read again each time the tab is opened."""
+    """The PC info tab: what this PC is, read again each time the tab is opened, and whether Windows is up to
+    date, which comes in from Windows Update later."""
 
-    def __init__(self, master: Any):
+    def __init__(self, master: Any, checks: pending.PendingChecks):
         super().__init__(
             master, fg_color="transparent",
             scrollbar_button_color=SUBTLE, scrollbar_button_hover_color=SUBTLE_HOVER,
         )
+        self.checks = checks
         self.sections: list[pcinfo.Section] = []
         self.titles: list[ctk.CTkLabel] = []
         self.cards: list[InfoCard] = []
+        self._restart = False
         self.copy_button = _secondary_button(self, text="Copy to clipboard", width=140, command=self._copy)
 
     def refresh(self) -> None:
         # Imported on the first visit to the tab, which most runs of the app never make.
         from update_check import pcinfo
 
-        sections = pcinfo.gather()
+        self._restart = pcinfo.restart_pending()
+        sections = pcinfo.gather(updates=self._updates())
         if _layout(sections) != _layout(self.sections):
             self._build(sections)
         else:
-            # Mostly the same as last time: change only what did, such as the free space, since each change
-            # redraws a label.
-            for (_, rows), card in zip(sections, self.cards):
-                for label, value in rows:
-                    if card.values[label].cget("text") != value:
-                        card.values[label].configure(text=value)
+            # Mostly the same as last time, such as all but the free space.
+            for section, card in zip(sections, self.cards):
+                for label, value in section.rows:
+                    card.show(label, value)
         self.sections = sections
+
+    def show_updates(self) -> None:
+        """Show what Windows Update has said, once it has."""
+        text = self._updates()
+        for section, card in zip(self.sections, self.cards):
+            for index, (label, _) in enumerate(section.rows):
+                if (section.title, label) == ("Windows", "Updates"):
+                    # Kept in the sections too, for the clipboard.
+                    section.rows[index] = (label, text)
+                    card.show(label, text)
+
+    def _updates(self) -> str:
+        status, count = self.checks.status(pending.WINDOWS_UPDATE)
+        return windows_update_text(status, count, self.checks.last_installed(pending.WINDOWS_UPDATE), self._restart)
 
     def _build(self, sections: list[pcinfo.Section]) -> None:
         for widget in (*self.titles, *self.cards):
             widget.destroy()
         self.titles, self.cards = [], []
         self.copy_button.pack_forget()
-        for index, (title, rows) in enumerate(sections):
-            self.titles.append(_section(self, title, top=4 if index == 0 else 18))
-            card = InfoCard(self, rows)
+        for index, section in enumerate(sections):
+            self.titles.append(_section(self, section.title, top=4 if index == 0 else 18))
+            card = InfoCard(self, section)
             card.pack(fill="x", padx=(0, 8), pady=5)
             self.cards.append(card)
         self.copy_button.pack(anchor="w", pady=(12, 8))
@@ -639,6 +709,8 @@ class App(ctk.CTk):
             return GraphicsCard(self.steps_frame, step, done, self._step_toggled, last_done, self.drivers)
         if step.id in pending.LOOKUPS:
             return PendingCard(self.steps_frame, step, done, self._step_toggled, last_done, self.pending)
+        if step.id == STORAGE_STEP:
+            return StorageCard(self.steps_frame, step, done, self._step_toggled, last_done)
         return StepCard(self.steps_frame, step, done, self._step_toggled, last_done)
 
     def _refresh_summary(self) -> None:
@@ -688,10 +760,12 @@ class App(ctk.CTk):
         self.tab = tab
         if tab == INFO_TAB:
             if self.info_page is None:
-                self.info_page = InfoPage(self)
+                self.info_page = InfoPage(self, self.pending)
             self.info_page.refresh()
             self.steps_frame.pack_forget()
             self.info_page.pack(**_PAGE)
+            # Asks Windows Update whether Windows is up to date, unless the checklist already has.
+            self._refresh_checks()
         else:
             if self.info_page is not None:
                 self.info_page.pack_forget()
@@ -751,6 +825,10 @@ class App(ctk.CTk):
         self.after(60_000, self._tick)
 
     def _focused(self, _event: tkinter.Event[Any]) -> None:
+        # Coming back after freeing up space: asking Windows for the free space takes microseconds.
+        for card in self.cards:
+            if isinstance(card, StorageCard):
+                card.show_meta()
         # Focus also moves between the window's own widgets, so re-detect at most every few seconds.
         if self._checked_at and time.monotonic() - self._checked_at > 3:
             self._refresh_checks()
@@ -759,6 +837,9 @@ class App(ctk.CTk):
         """Look into the steps that can report something, in the background."""
         self._checked_at = time.monotonic()
         ids = {step.id for step in self.data.steps}
+        if self.tab == INFO_TAB:
+            # The PC info tab says whether Windows is up to date, whether or not the checklist asks.
+            ids.add(pending.WINDOWS_UPDATE)
         if GRAPHICS_STEP in ids and self.drivers.refresh(recheck):
             self._show_drivers()
         if self.pending.refresh(ids, recheck):
@@ -786,11 +867,21 @@ class App(ctk.CTk):
         for card in self.cards:
             if isinstance(card, PendingCard):
                 card.show_meta()
+        if self.info_page is not None:
+            self.info_page.show_updates()
 
     def _bring_to_front(self) -> None:
         self.attributes("-topmost", True)
         self.focus_force()
         self.after(1500, lambda: self.attributes("-topmost", False))
+
+    def report_callback_exception(
+        self, exc: type[BaseException], val: BaseException, tb: TracebackType | None,
+    ) -> None:
+        # Tk prints these to a console, which the .exe doesn't have; the log keeps them for whoever supports it.
+        log.error("Unexpected error in the window", exc_info=(exc, val, tb))
+        if not system.FROZEN:
+            super().report_callback_exception(exc, val, tb)
 
 
 class StepRow(ctk.CTkFrame):
@@ -902,17 +993,25 @@ class SettingsWindow(ctk.CTkToplevel):
         _section(body, "This app")
         updates = _card(body)
         updates.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
+        self.version_label = ctk.CTkLabel(
             updates, text="Updates", font=_font(14, True), text_color=TEXT, anchor="w", height=20,
-        ).grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=(14, 0))
+        )
+        self.version_label.grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=(14, 0))
+        managed = not system.self_update_allowed()
         self.update_status = ctk.CTkLabel(
             updates, font=_font(12), text_color=MUTED, anchor="w", justify="left", wraplength=290,
-            text="The app looks for a new version once a day and installs it by itself.",
+            text="Your organization rolls out new versions of this app." if managed
+            else "The app looks for a new version once a day and installs it by itself.",
         )
         self.update_status.grid(row=1, column=0, sticky="ew", padx=(16, 8), pady=(0, 14))
-        self.update_button = _secondary_button(updates, text="Check now", width=100, command=self._check_now)
+        self.update_button = _secondary_button(
+            updates, text="Check now", width=100, command=self._check_now, state="disabled" if managed else "normal",
+        )
         self.update_button.grid(row=0, column=1, rowspan=2, padx=(0, 16))
         self._update_result: queue.SimpleQueue[bool | None] = queue.SimpleQueue()
+        self._version: queue.SimpleQueue[str | None] = queue.SimpleQueue()
+        threading.Thread(target=self._read_version, daemon=True).start()
+        self.after(100, self._show_version)
 
         _section(body, "Troubleshooting")
         repair = _card(body)
@@ -999,6 +1098,29 @@ class SettingsWindow(ctk.CTkToplevel):
         if messagebox.askyesno(TITLE, "Replace your checklist with the default steps?", parent=self):
             self.app.data.steps = default_steps()
             self._changed()
+
+    def _read_version(self) -> None:
+        # In a thread: the package metadata takes about 70 ms to import, too long to hold up the window for.
+        try:
+            from importlib import metadata
+
+            version = metadata.version("update-check")
+        except Exception:
+            # A build without the package metadata: the card keeps its title.
+            log.warning("Couldn't read the app's version", exc_info=True)
+            version = None
+        self._version.put(version)
+
+    def _show_version(self) -> None:
+        if not self.winfo_exists():
+            return
+        try:
+            version = self._version.get_nowait()
+        except queue.Empty:
+            self.after(100, self._show_version)
+            return
+        if version:
+            self.version_label.configure(text=f"Version {version}")
 
     def _check_now(self) -> None:
         """Ask GitHub for a newer release now, rather than waiting for the daily check."""
