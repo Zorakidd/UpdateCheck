@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 HOURS = [f"{hour:02d}:00" for hour in range(24)]
+# The icon for the title bar and the taskbar. It sits next to this module, and the .exe's build puts it there too.
+ICON = Path(__file__).with_name("icon.ico")
 CHECKLIST_TAB, INFO_TAB = "Checklist", "PC info"
 # How each tab's page fills the window between the header and the footer.
 _PAGE: dict[str, Any] = {"fill": "both", "expand": True, "padx": (20, 12), "pady": (0, 12)}
@@ -113,6 +115,15 @@ def _ago(day: date, today: date) -> str:
 
 def _when(day: date, hour: int) -> str:
     return f"{day:%a}, {_day(day)} at {hour:02d}:00"
+
+
+def _set_icon(window: ctk.CTk | ctk.CTkToplevel) -> None:
+    """Show the app's icon rather than CustomTkinter's, which it sets 200 ms in unless a window has one."""
+    try:
+        window.iconbitmap(str(ICON))
+    except tkinter.TclError:
+        # A build that left the icon out: the window opens all the same.
+        log.warning("Couldn't set the window icon from %s", ICON, exc_info=True)
 
 
 def _place(window: ctk.CTk | ctk.CTkToplevel, width: int, height: int) -> None:
@@ -516,6 +527,7 @@ class InfoPage(ctk.CTkScrollableFrame):
 class App(ctk.CTk):
     def __init__(self, data: State, path: Path, reminder: bool):
         super().__init__(fg_color=BG)
+        _set_icon(self)
         self.data = data
         self.path = path
         self.settings_window: SettingsWindow | None = None
@@ -818,6 +830,7 @@ class StepRow(ctk.CTkFrame):
 class SettingsWindow(ctk.CTkToplevel):
     def __init__(self, app: App):
         super().__init__(app, fg_color=BG)
+        _set_icon(self)
         self.app = app
         self.title("Settings")
         _place(self, 500, 680)

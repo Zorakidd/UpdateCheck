@@ -3,6 +3,8 @@ from PyInstaller.utils.hooks import copy_metadata
 
 datas = []
 datas += copy_metadata('update-check')
+# The window's icon, next to the module that loads it.
+datas += [('src/update_check/icon.ico', 'update_check')]
 
 
 a = Analysis(
@@ -39,4 +41,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='src/update_check/icon.ico',
 )

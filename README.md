@@ -56,16 +56,21 @@ uvx ruff check .
 Running from source never updates itself or registers with Windows startup on its own; the footer
 switch still works.
 
+The icon, [icon.ico](src/update_check/icon.ico), is drawn by
+`uv run --no-project --with pillow python tools/make_icon.py`.
+
 ## Build and release
 
 1. Bump `version` in `pyproject.toml`.
-2. Build the single-file .exe:
+2. Build the single-file .exe from [UpdateCheck.spec](UpdateCheck.spec):
 
    ```
-   uv run --with pyinstaller pyinstaller --onefile --windowed --name UpdateCheck --paths src --copy-metadata update-check src/update_check/__main__.py
+   uv run --with pyinstaller pyinstaller UpdateCheck.spec
    ```
 
-   `--copy-metadata update-check` is required: the updater reads the running version from it and
-   stays off without it.
+   The spec holds the build's options: the package metadata, which the updater reads the running version
+   from and stays off without, and the icon, on the .exe and taken along for the title bar and taskbar.
+   Always build from the spec. Given `__main__.py` instead, PyInstaller writes a new spec over it from its
+   command line alone and drops whatever that lacks.
 3. Publish a GitHub release tagged `v<version>` (for example `v0.2.0`) with `dist/UpdateCheck.exe`
    attached. The repository has to be public, since the updater doesn't authenticate.
