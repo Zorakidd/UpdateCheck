@@ -100,6 +100,7 @@ class _DeviceInfo(ctypes.Structure):
 
 _DISPLAY_CLASS = _Guid(0x4D36E968, 0xE325, 0x11CE, (ctypes.c_ubyte * 8)(0xBF, 0xC1, 0x08, 0x00, 0x2B, 0xE1, 0x03, 0x18))
 _DIGCF_PRESENT = 0x2
+_SPDRP_DEVICEDESC = 0x0
 _SPDRP_HARDWAREID = 0x1
 _SPDRP_DRIVER = 0x9
 _INVALID_HANDLE = ctypes.c_void_p(-1).value
@@ -117,21 +118,37 @@ _setupapi.SetupDiDestroyDeviceInfoList.argtypes = [wintypes.HANDLE]
 
 def detect() -> list[Card]:
     """The NVIDIA, AMD and Intel graphics cards in this PC. Takes a few milliseconds."""
+    order = list(_VENDORS.values())
+    return sorted(set(_each_adapter(_card)), key=lambda card: (order.index(card.vendor), card.name))
+
+
+def adapter_names() -> list[str]:
+    """The name of every graphics adapter in this PC, whatever its vendor, such as a Qualcomm one in an ARM
+    laptop or a virtual machine's."""
+    def name(devices: int, info: _DeviceInfo) -> str | None:
+        if card := _card(devices, info):
+            return card.name if card.driver_version else f"{card.name} (no driver)"
+        return _device_property(devices, info, _SPDRP_DEVICEDESC) or None
+
+    return _each_adapter(name)
+
+
+def _each_adapter[T](read: Callable[[int, _DeviceInfo], T | None]) -> list[T]:
+    """What `read` makes of each graphics adapter that is present, leaving out the Nones."""
     devices = _setupapi.SetupDiGetClassDevsW(ctypes.byref(_DISPLAY_CLASS), None, None, _DIGCF_PRESENT)
     if devices in (None, _INVALID_HANDLE):
         raise ctypes.WinError(ctypes.get_last_error())
-    cards: set[Card] = set()
+    found: list[T] = []
     try:
         info = _DeviceInfo(size=ctypes.sizeof(_DeviceInfo))
         for index in itertools.count():
             if not _setupapi.SetupDiEnumDeviceInfo(devices, index, ctypes.byref(info)):
                 break
-            if card := _card(devices, info):
-                cards.add(card)
+            if (value := read(devices, info)) is not None:
+                found.append(value)
     finally:
         _setupapi.SetupDiDestroyDeviceInfoList(devices)
-    order = list(_VENDORS.values())
-    return sorted(cards, key=lambda card: (order.index(card.vendor), card.name))
+    return found
 
 
 def vendor_of(hardware_id: str) -> str | None:

@@ -23,6 +23,8 @@ _ERROR_ALREADY_EXISTS = 183
 _ERROR_CANCELLED = 1223
 _SW_RESTORE = 9
 _SPI_GETWORKAREA = 0x30
+# What SHQueryUserNotificationState says while a full-screen app or game, or a presentation, has the screen.
+_QUNS_BUSY, _QUNS_RUNNING_D3D_FULL_SCREEN, _QUNS_PRESENTATION_MODE = 2, 3, 4
 
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _kernel32.CreateMutexW.restype = wintypes.HANDLE
@@ -118,6 +120,15 @@ def repair_windows() -> None:
         # Declining the administrator prompt isn't an error.
         if error.winerror != _ERROR_CANCELLED:
             raise
+
+
+def user_is_busy() -> bool:
+    """Whether a full-screen game or app, or a presentation, has the screen, so a reminder shouldn't pop up."""
+    state = ctypes.c_int()
+    # shell32 is loaded only here, since most background checks have no reminder to show.
+    if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) != 0:
+        return False
+    return state.value in (_QUNS_BUSY, _QUNS_RUNNING_D3D_FULL_SCREEN, _QUNS_PRESENTATION_MODE)
 
 
 def claim_single_instance() -> int | None:

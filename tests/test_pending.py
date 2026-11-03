@@ -50,6 +50,17 @@ def test_no_output_at_all_is_not_an_answer():
     assert count_winget_table("") is None
 
 
+def test_a_failing_winget_is_not_taken_for_nothing_to_upgrade():
+    # What winget said, and the code it exited with, when asked to search a source that doesn't exist.
+    output = "Keine Quellen entsprechen dem angegebenen Wert: gibtsnicht\nDie konfigurierten Quellen sind:\n  winget\n"
+    assert count_winget_table(output, 0x8A150012) is None
+
+
+def test_the_rows_of_a_table_count_whatever_the_exit_code():
+    # Packages winget did list are waiting, whatever else went wrong.
+    assert count_winget_table(TABLE, 0x8A15000F) == 4
+
+
 def test_an_absurd_number_of_rows_is_not_an_answer():
     rows = "".join(f"Package{index}   Id{index}   1.0   2.0   winget\n" for index in range(1200))
     assert count_winget_table("-" * 40 + "\n" + rows) is None

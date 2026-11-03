@@ -108,7 +108,15 @@ def test_missing_file_gives_default_checklist(tmp_path):
     state = load(tmp_path / "state.json")
     assert state == State()
     assert state.steps
-    assert state.settings.autostart
+    # Not asked yet: the first start asks before setting anything up.
+    assert state.settings.autostart is None
+
+
+def test_an_answer_about_the_reminder_is_kept(tmp_path):
+    # Checklists saved before the first start asked have it on, and keep it on.
+    path = tmp_path / "state.json"
+    save(make_state(autostart=True), path)
+    assert load(path).settings.autostart is True
 
 
 def test_unreadable_file_is_backed_up(tmp_path):

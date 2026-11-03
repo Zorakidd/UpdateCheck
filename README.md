@@ -22,12 +22,19 @@ single .exe that starts with Windows and keeps itself up to date from GitHub rel
   Each card gets a button for NVIDIA App, AMD Software: Adrenalin Edition or Intel Graphics Software, or
   for the driver download page if that app isn't installed. The status updates when you come back to the
   window after installing a driver. Removing the step in **Settings** also stops the online lookup.
+- **PC info.** A second tab lists what the PC is: maker and model, processor, memory, graphics, free
+  space on the system drive, the Windows edition, version and build, the BIOS version and date, the boot
+  mode, Secure Boot and the TPM. It is read from the registry and Windows itself each time the tab opens,
+  in a few milliseconds and without admin rights. **Copy to clipboard** puts it all in plain text, for
+  example to ask someone for help.
 - **Repair Windows.** For when Windows misbehaves, **Settings** can run DISM and System File Checker
   (`sfc /scannow`) as administrator in a console window that stays open.
-- **Starts with Windows.** When the .exe starts, it registers a sign-in entry for your user and a daily
-  Task Scheduler task at the reminder hour (no admin rights needed), and re-registers them if the .exe
-  has moved. Both run `UpdateCheck.exe --check`, which opens the window only while this week's checklist
-  is unfinished, at most once a day. The **Automatic reminder** switch in the footer turns this off.
+- **Starts with Windows, if you like.** On its first start the .exe asks whether to remind you every
+  week. With a yes it registers a sign-in entry for your user and a daily Task Scheduler task at the
+  reminder hour (no admin rights needed), and re-registers them if the .exe has moved. Both run
+  `UpdateCheck.exe --check`, which opens the window only while this week's checklist is unfinished, at
+  most once a day, and not while a full-screen game or a presentation has the screen. The **Automatic
+  reminder** switch in the footer turns this on and off.
 - **Updates itself.** At most once a day the .exe asks GitHub for the latest release of
   `Zorakidd/Update-check` (`GITHUB_REPO` in [updater.py](src/update_check/updater.py)). If its tag is a
   newer version and an .exe is attached, the app downloads it, checks its size and SHA-256 digest, swaps

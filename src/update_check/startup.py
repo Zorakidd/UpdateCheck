@@ -50,7 +50,7 @@ def run(check_only: bool) -> None:
         # The open window saves its own state, so only read it here.
         data = load(path)
         data.roll_over(now)
-        if not check_only or data.should_remind(now):
+        if not check_only or (data.should_remind(now) and not system.user_is_busy()):
             system.focus_window(system.TITLE)
         return
 
@@ -69,8 +69,9 @@ def run(check_only: bool) -> None:
             return
 
     data = load(path)
-    if system.FROZEN:
-        # Only the .exe registers itself; from source this would point Windows startup at the dev Python.
+    # Only the .exe registers itself; from source this would point Windows startup at the dev Python. Nothing
+    # is registered before the first start has asked.
+    if system.FROZEN and data.settings.autostart is not None:
         try:
             system.sync_autostart(data.settings.autostart, data.settings.hour)
         except OSError:
@@ -81,7 +82,9 @@ def run(check_only: bool) -> None:
             logging.getLogger(__name__).exception("Couldn't register the app to start with Windows")
     data.roll_over(now)
     if check_only:
-        if not data.should_remind(now):
+        # A full-screen game or a presentation isn't interrupted. Today's reminder is then still to come, at the
+        # next sign-in or daily check.
+        if not data.should_remind(now) or system.user_is_busy():
             save(data, path)
             return
         data.last_reminded = now.date()

@@ -1,9 +1,39 @@
 import subprocess
 import sys
+import types
 from datetime import timedelta
 
+import pytest
+
+from update_check import startup, system
 from update_check.startup import _UPDATE_INTERVAL, _update_due
-from update_check.state import local_now
+from update_check.state import Settings, State, local_now, save
+
+
+@pytest.fixture
+def start_exe(monkeypatch, tmp_path):
+    """Start up as the .exe does, without asking GitHub or touching Windows. Returns what start-up registered
+    and, for each time it opened the window, whether as a reminder."""
+    path = tmp_path / "state.json"
+    monkeypatch.setenv("UPDATE_CHECK_DATA", str(path))
+    monkeypatch.setattr(system, "FROZEN", True)
+    monkeypatch.setattr(system, "claim_single_instance", lambda: 1)
+    monkeypatch.setattr(startup, "_update_due", lambda *args: False)
+    monkeypatch.setattr(startup, "_start_logging", lambda path: None)
+    monkeypatch.setattr(system, "user_is_busy", lambda: False)
+    registered: list[bool] = []
+    opened: list[bool] = []
+    monkeypatch.setattr(system, "sync_autostart", lambda enabled, hour: registered.append(enabled))
+    window = types.SimpleNamespace(open_window=lambda data, path, reminder: opened.append(reminder))
+    monkeypatch.setitem(sys.modules, "update_check.app", window)
+
+    def start(saved: State | None = None, check_only: bool = False) -> tuple[list[bool], list[bool]]:
+        if saved is not None:
+            save(saved, path)
+        startup.run(check_only=check_only)
+        return registered, opened
+
+    return start
 
 
 def test_background_check_does_not_import_the_window_toolkit():
@@ -39,6 +69,35 @@ def test_opening_the_window_does_not_import_the_driver_lookup_s_parsers():
         " sys.exit(bool({'urllib.request', 'xml.etree.ElementTree'} & sys.modules.keys()))"
     )
     assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
+
+
+def test_opening_the_window_does_not_read_the_pc_yet():
+    # Only the PC info tab needs it, and most runs never open that tab.
+    code = "import sys, update_check.app; sys.exit('update_check.pcinfo' in sys.modules)"
+    assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
+
+
+def test_the_first_start_sets_nothing_up_before_asking(start_exe):
+    registered, opened = start_exe()
+    assert registered == []
+    # The window asks; opened by hand, not as a reminder.
+    assert opened == [False]
+
+
+def test_later_starts_apply_the_answer(start_exe):
+    registered, _ = start_exe(State(settings=Settings(autostart=False)))
+    assert registered == [False]
+
+
+def test_a_reminder_waits_while_a_game_or_presentation_is_full_screen(start_exe, monkeypatch):
+    monkeypatch.setattr(system, "user_is_busy", lambda: True)
+    _, opened = start_exe(State(settings=Settings(autostart=True)), check_only=True)
+    assert opened == []
+
+    # Still due, so the next check reminds.
+    monkeypatch.setattr(system, "user_is_busy", lambda: False)
+    _, opened = start_exe(check_only=True)
+    assert opened == [True]
 
 
 def test_the_background_check_stays_lean():

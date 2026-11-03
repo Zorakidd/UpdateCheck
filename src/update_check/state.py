@@ -90,8 +90,9 @@ class Settings:
     weekday: int = 0
     hour: int = 10
     appearance: str = "System"
-    # Start with Windows so reminders can appear. Applied automatically when running as the .exe.
-    autostart: bool = True
+    # Start with Windows so reminders can appear. None until the .exe has asked, on its first start; from then on
+    # the .exe applies the answer at every start.
+    autostart: bool | None = None
 
 
 @dataclass

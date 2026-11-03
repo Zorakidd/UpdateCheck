@@ -30,32 +30,34 @@ _WINGET_TIMEOUT = 90
 _IMPLAUSIBLE = 1000
 
 
-def _run(command: list[str], timeout: int) -> str | None:
-    """The command's output, or None if it couldn't be run. CREATE_NO_WINDOW keeps a console from
+def _run(command: list[str], timeout: int) -> subprocess.CompletedProcess[str] | None:
+    """The finished command, or None if it couldn't be run. CREATE_NO_WINDOW keeps a console from
     flashing up over the checklist."""
     try:
-        result = subprocess.run(
+        return subprocess.run(
             command, check=False, capture_output=True, timeout=timeout,
             encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW,
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    return result.stdout
 
 
 def winget_upgrades() -> int | None:
     """How many packages winget can upgrade, or None if its answer couldn't be read."""
-    output = _run(["winget", "upgrade", "--disable-interactivity"], _WINGET_TIMEOUT)
-    return count_winget_table(output) if output is not None else None
+    result = _run(["winget", "upgrade", "--disable-interactivity"], _WINGET_TIMEOUT)
+    return count_winget_table(result.stdout, result.returncode) if result is not None else None
 
 
-def count_winget_table(output: str) -> int | None:
+def count_winget_table(output: str, exit_code: int = 0) -> int | None:
     """Count the rows of winget's upgrade table.
 
     The table is found by shape rather than by its words, which are translated: a rule of dashes, then one
     row per package, then a summary sentence. A row is padded out into columns, so somewhere along it two
     spaces sit together; the sentence underneath is ordinary prose and never has that. A column whose text
     exactly fills its width leaves only a single space, so one such gap is enough to call it a row.
+
+    Without a table, only the exit code tells "nothing to upgrade" from an error: winget explains both in a
+    single translated sentence.
     """
     lines = output.splitlines()
     for index, line in enumerate(lines):
@@ -67,8 +69,9 @@ def count_winget_table(output: str) -> int | None:
                     break
                 count += 1
             return count if count < _IMPLAUSIBLE else None
-    # No rule at all means winget said something else, such as that everything is up to date.
-    return 0 if lines else None
+    # No rule at all means winget said something else: that everything is up to date if it exited cleanly,
+    # or why it failed.
+    return 0 if lines and exit_code == 0 else None
 
 
 def windows_updates() -> int | None:
@@ -78,12 +81,12 @@ def windows_updates() -> int | None:
         "$searcher = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher();"
         "$searcher.Search(\"IsInstalled=0 and Type='Software' and IsHidden=0\").Updates.Count"
     )
-    output = _run(
+    result = _run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script], _WINDOWS_UPDATE_TIMEOUT
     )
-    if output is None:
+    if result is None or result.returncode:
         return None
-    text = output.strip()
+    text = result.stdout.strip()
     return int(text) if text.isdigit() and int(text) < _IMPLAUSIBLE else None
 
 

@@ -64,6 +64,13 @@ def test_detection_returns_cards():
     assert all(isinstance(card, Card) for card in graphics.detect())
 
 
+def test_every_adapter_is_listed_by_name():
+    names = graphics.adapter_names()
+    assert all(isinstance(name, str) and name for name in names)
+    # The vendors' cards are among them, under the same names.
+    assert {card.name for card in graphics.detect() if card.driver_version} <= set(names)
+
+
 @pytest.mark.parametrize(
     ("name", "product"),
     [

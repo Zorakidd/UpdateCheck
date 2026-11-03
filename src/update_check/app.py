@@ -10,7 +10,7 @@ from dataclasses import astuple
 from datetime import date
 from pathlib import Path
 from tkinter import messagebox
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import customtkinter as ctk
 
@@ -27,9 +27,15 @@ from update_check.state import (
 )
 from update_check.system import TITLE
 
+if TYPE_CHECKING:
+    from update_check import pcinfo
+
 log = logging.getLogger(__name__)
 
 HOURS = [f"{hour:02d}:00" for hour in range(24)]
+CHECKLIST_TAB, INFO_TAB = "Checklist", "PC info"
+# How each tab's page fills the window between the header and the footer.
+_PAGE: dict[str, Any] = {"fill": "both", "expand": True, "padx": (20, 12), "pady": (0, 12)}
 
 # (light, dark) color pairs
 BG = ("#F3F4F6", "#111318")
@@ -73,10 +79,18 @@ def _card(master: Any) -> ctk.CTkFrame:
     return card
 
 
-def _section(master: Any, text: str) -> None:
-    ctk.CTkLabel(
-        master, text=text.upper(), font=_font(11, True), text_color=MUTED, anchor="w", height=16,
-    ).pack(fill="x", padx=4, pady=(18, 4))
+def _section(master: Any, text: str, top: int = 18) -> ctk.CTkLabel:
+    label = ctk.CTkLabel(master, text=text.upper(), font=_font(11, True), text_color=MUTED, anchor="w", height=16)
+    label.pack(fill="x", padx=4, pady=(top, 4))
+    return label
+
+
+def _segmented(master: Any, values: list[str], command: Callable[[str], None]) -> ctk.CTkSegmentedButton:
+    return ctk.CTkSegmentedButton(
+        master, values=values, command=command, height=34, font=_font(13),
+        fg_color=SUBTLE, selected_color=SELECTED, selected_hover_color=SELECTED,
+        unselected_color=SUBTLE, unselected_hover_color=SUBTLE_HOVER, text_color=TEXT,
+    )
 
 
 def _day(moment: date) -> str:
@@ -411,6 +425,94 @@ class DriverRow(ctk.CTkFrame):
             messagebox.showerror(TITLE, f"Couldn't open {what}.\n\n{error}", parent=self)
 
 
+def _layout(sections: list[pcinfo.Section]) -> list[tuple[str, list[str]]]:
+    """The section titles and row labels, without the values."""
+    return [(title, [label for label, _ in rows]) for title, rows in sections]
+
+
+class InfoCard(ctk.CTkFrame):
+    """A section of the PC info tab: a label and a value on each row."""
+
+    LABEL_WIDTH = 96
+    # The label column and the padding on either side of both columns.
+    RESERVED = 16 + LABEL_WIDTH + 12 + 16
+
+    def __init__(self, master: Any, rows: list[tuple[str, str]]):
+        super().__init__(master, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=12)
+        self.grid_columnconfigure(1, weight=1)
+        self.values: dict[str, ctk.CTkLabel] = {}
+        self._wraplength = 0.0
+        for row, (label, value) in enumerate(rows):
+            pady = (14 if row == 0 else 3, 14 if row == len(rows) - 1 else 3)
+            # Level with the first line of a value that runs over several.
+            ctk.CTkLabel(
+                self, text=label, font=_font(12), text_color=MUTED, anchor="w", width=self.LABEL_WIDTH, height=20,
+            ).grid(row=row, column=0, sticky="nw", padx=(16, 12), pady=pady)
+            self.values[label] = ctk.CTkLabel(
+                self, text=value, font=_font(13), text_color=TEXT, anchor="w", justify="left", height=20,
+            )
+            self.values[label].grid(row=row, column=1, sticky="ew", padx=(0, 16), pady=pady)
+        self.bind("<Configure>", self._wrap)
+
+    def _wrap(self, event: tkinter.Event[Any]) -> None:
+        wraplength = max(event.width / ctk.ScalingTracker.get_widget_scaling(self) - self.RESERVED, 120)
+        # Rewrapping changes the card's height, which comes back here with the same width.
+        if wraplength != self._wraplength:
+            self._wraplength = wraplength
+            for label in self.values.values():
+                label.configure(wraplength=wraplength)
+
+
+class InfoPage(ctk.CTkScrollableFrame):
+    """The PC info tab: what this PC is, read again each time the tab is opened."""
+
+    def __init__(self, master: Any):
+        super().__init__(
+            master, fg_color="transparent",
+            scrollbar_button_color=SUBTLE, scrollbar_button_hover_color=SUBTLE_HOVER,
+        )
+        self.sections: list[pcinfo.Section] = []
+        self.titles: list[ctk.CTkLabel] = []
+        self.cards: list[InfoCard] = []
+        self.copy_button = _secondary_button(self, text="Copy to clipboard", width=140, command=self._copy)
+
+    def refresh(self) -> None:
+        # Imported on the first visit to the tab, which most runs of the app never make.
+        from update_check import pcinfo
+
+        sections = pcinfo.gather()
+        if _layout(sections) != _layout(self.sections):
+            self._build(sections)
+        else:
+            # Mostly the same as last time: change only what did, such as the free space, since each change
+            # redraws a label.
+            for (_, rows), card in zip(sections, self.cards):
+                for label, value in rows:
+                    if card.values[label].cget("text") != value:
+                        card.values[label].configure(text=value)
+        self.sections = sections
+
+    def _build(self, sections: list[pcinfo.Section]) -> None:
+        for widget in (*self.titles, *self.cards):
+            widget.destroy()
+        self.titles, self.cards = [], []
+        self.copy_button.pack_forget()
+        for index, (title, rows) in enumerate(sections):
+            self.titles.append(_section(self, title, top=4 if index == 0 else 18))
+            card = InfoCard(self, rows)
+            card.pack(fill="x", padx=(0, 8), pady=5)
+            self.cards.append(card)
+        self.copy_button.pack(anchor="w", pady=(12, 8))
+
+    def _copy(self) -> None:
+        from update_check import pcinfo
+
+        self.clipboard_clear()
+        self.clipboard_append(pcinfo.as_text(self.sections))
+        self.copy_button.configure(text="Copied")
+        self.after(1500, lambda: self.copy_button.configure(text="Copy to clipboard"))
+
+
 class App(ctk.CTk):
     def __init__(self, data: State, path: Path, reminder: bool):
         super().__init__(fg_color=BG)
@@ -422,6 +524,9 @@ class App(ctk.CTk):
         self.minsize(460, 520)
         # CustomTkinter polls the Windows theme every 30 ms, most of an idle window's CPU use.
         ctk.AppearanceModeTracker.update_loop_interval = 1000
+        self.tab = CHECKLIST_TAB
+        # Built on the first visit to the tab.
+        self.info_page: InfoPage | None = None
 
         self._build_header()
         self._build_footer()
@@ -429,7 +534,7 @@ class App(ctk.CTk):
             self, fg_color="transparent",
             scrollbar_button_color=SUBTLE, scrollbar_button_hover_color=SUBTLE_HOVER,
         )
-        self.steps_frame.pack(fill="both", expand=True, padx=(20, 12), pady=(0, 12))
+        self.steps_frame.pack(**_PAGE)
         self.cards: list[StepCard] = []
         self.empty_label = ctk.CTkLabel(
             self.steps_frame, text="No steps yet. Add some in Settings.", font=_font(13), text_color=MUTED,
@@ -446,6 +551,10 @@ class App(ctk.CTk):
         self.bind("<FocusIn>", self._focused, add="+")
         if reminder:
             self._bring_to_front()
+        if system.FROZEN and data.settings.autostart is None:
+            # The .exe sets itself up to start with Windows only once asked, on its first start. Shortly after
+            # the window shows, so the question comes with the checklist it is about.
+            self.after(400, self._ask_about_reminder)
 
     def _build_header(self) -> None:
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -464,6 +573,9 @@ class App(ctk.CTk):
         self.summary.grid(row=2, column=0, columnspan=2, sticky="w")
         self.progress = ctk.CTkProgressBar(header, height=8, corner_radius=4, fg_color=SUBTLE)
         self.progress.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        self.tabs = _segmented(header, [CHECKLIST_TAB, INFO_TAB], self._show_tab)
+        self.tabs.set(CHECKLIST_TAB)
+        self.tabs.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(16, 0))
 
     def _build_footer(self) -> None:
         footer = ctk.CTkFrame(self, fg_color=CARD, corner_radius=0)
@@ -557,6 +669,34 @@ class App(ctk.CTk):
         self.data.set_done(step_id, done, local_now())
         self.save()
         self._refresh_summary()
+
+    def _show_tab(self, tab: str) -> None:
+        if tab == self.tab:
+            return
+        self.tab = tab
+        if tab == INFO_TAB:
+            if self.info_page is None:
+                self.info_page = InfoPage(self)
+            self.info_page.refresh()
+            self.steps_frame.pack_forget()
+            self.info_page.pack(**_PAGE)
+        else:
+            if self.info_page is not None:
+                self.info_page.pack_forget()
+            self.steps_frame.pack(**_PAGE)
+
+    def _ask_about_reminder(self) -> None:
+        settings = self.data.settings
+        when = f"{WEEKDAYS[settings.weekday]}s at {settings.hour:02d}:00"
+        self.set_autostart(messagebox.askyesno(
+            TITLE,
+            "Remind you to work through the checklist every week?\n\n"
+            f"Update Check will then start with Windows and open on {when}, or when you next sign in if the "
+            "PC was off. Until the week's steps are done, it reminds you at most once a day. No administrator "
+            "rights are needed.\n\n"
+            "The switch at the bottom of the window turns this on or off at any time.",
+            parent=self,
+        ))
 
     def _autostart_toggled(self) -> None:
         self.set_autostart(bool(self.autostart_switch.get()))
@@ -716,11 +856,7 @@ class SettingsWindow(ctk.CTkToplevel):
         ).grid(row=1, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 12))
 
         _section(body, "Appearance")
-        appearance = ctk.CTkSegmentedButton(
-            body, values=list(APPEARANCES), command=self._appearance_changed, height=34, font=_font(13),
-            fg_color=SUBTLE, selected_color=SELECTED, selected_hover_color=SELECTED,
-            unselected_color=SUBTLE, unselected_hover_color=SUBTLE_HOVER, text_color=TEXT,
-        )
+        appearance = _segmented(body, list(APPEARANCES), self._appearance_changed)
         appearance.set(settings.appearance)
         appearance.pack(fill="x", pady=5)
 
