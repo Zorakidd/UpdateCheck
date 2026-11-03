@@ -1,10 +1,11 @@
 import struct
+import time
 from datetime import date
 
 import pytest
 
 from update_check import pending
-from update_check.app import ICON, _reuse, windows_update_text
+from update_check.app import ICON, PendingCard, _reuse, windows_update_text
 from update_check.state import Step
 
 
@@ -52,16 +53,29 @@ def test_identical_steps_each_keep_a_widget_pointing_at_their_own_step():
 
 
 @pytest.mark.parametrize(
-    ("status", "count", "installed", "restart", "text"),
+    ("status", "count", "restart", "text"),
     [
-        (pending.CHECKING, 0, None, False, "Asking Windows Update…"),
-        (pending.NOTHING_PENDING, 0, date(2026, 11, 3), False, "Up to date\nLast installed Nov 3, 2026"),
-        (pending.PENDING, 3, None, True, "3 updates waiting\nRestart to finish installing updates"),
-        (pending.CHECK_FAILED, 0, None, False, "Couldn't ask Windows Update"),
+        (pending.CHECKING, 0, False, "Asking Windows Update…"),
+        (pending.NOTHING_PENDING, 0, False, "Up to date"),
+        (pending.PENDING, 3, True, "3 updates waiting\nRestart to finish installing updates"),
+        (pending.CHECK_FAILED, 0, False, "Couldn't ask Windows Update"),
     ],
 )
-def test_the_pc_info_tab_says_how_current_windows_is(status, count, installed, restart, text):
-    assert windows_update_text(status, count, installed, restart) == text
+def test_the_pc_info_tab_says_how_current_windows_is(status, count, restart, text):
+    assert windows_update_text(status, count, restart) == text
+
+
+def test_the_checklist_says_when_windows_last_installed_updates():
+    checks = pending.PendingChecks(lookups={"windows-update": lambda: pending.Found(0, date(2026, 11, 3))})
+    checks.refresh({"windows-update"})
+    deadline = time.monotonic() + 5
+    while checks.busy and time.monotonic() < deadline:
+        checks.collect()
+        time.sleep(0.01)
+    card = PendingCard.__new__(PendingCard)
+    card.checks, card.step, card.last_done = checks, Step("Windows Update", id="windows-update"), None
+    text, _ = card._meta()
+    assert text.startswith("Nothing waiting · last installed Nov 3")
 
 
 def test_the_icon_has_the_sizes_windows_asks_for():

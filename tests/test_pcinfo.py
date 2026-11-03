@@ -9,6 +9,7 @@ from update_check.pcinfo import (
     as_text,
     bios_page,
     bios_version,
+    first_installed,
     management,
     model,
     windows_name,
@@ -98,6 +99,15 @@ def test_brand_pcs_get_their_makers_support_site_and_others_a_search_for_their_m
 )
 def test_who_manages_the_pc(domain, tenant, text):
     assert management(domain, tenant) == text
+
+
+def test_installed_on_is_the_first_installation_not_the_last_upgrade():
+    # Windows 10 installed in 2021, upgraded to Windows 11 in 2023 and to a new version in 2026.
+    first, upgrade, current = 1_620_000_000, 1_690_000_000, 1_771_623_207
+    assert first_installed(current, [upgrade, first]) == first
+    assert first_installed(current, []) == current
+    assert first_installed(current, [None, 0, "?"]) == current
+    assert first_installed(None, []) is None
 
 
 def test_the_clipboard_gets_a_line_per_row():

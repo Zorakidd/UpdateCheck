@@ -12,7 +12,8 @@ single .exe that starts with Windows and keeps itself up to date from GitHub rel
   also add, remove and reorder steps and switch between light and dark mode.
 - **What's actually waiting.** The Windows Update, Optional driver updates and Desktop apps steps say how
   much is queued up, for example "4 upgrades waiting", looked up in the background while you read the
-  rest. Driver updates include firmware, which on many brand PCs means the BIOS. Neither tool has a
+  rest. The Windows Update step also says when Windows last installed updates, and driver updates
+  include firmware, which on many brand PCs means the BIOS. Neither tool has a
   machine-readable count — winget prints a table in your own language and Windows Update answers only
   through COM — so both are read defensively and say nothing rather than guess. One Windows Update search
   serves both of its steps and the PC info tab.
@@ -33,8 +34,10 @@ single .exe that starts with Windows and keeps itself up to date from GitHub rel
   few milliseconds and without admin rights. **Copy to clipboard** puts it all in plain text, for example
   to ask someone for help.
   - *Is Windows up to date?* The tab answers the way Windows does: by asking Windows Update whether
-    anything is waiting, together with the day updates were last installed and whether a restart is
-    needed to finish them. A newer version of Windows meant for the PC shows up there too.
+    anything is waiting, and whether a restart is needed to finish installing updates. A newer version of
+    Windows meant for the PC shows up there too.
+  - *Installed on* is the day Windows was first installed on the PC. Windows' own Settings show the day of
+    the last upgrade to a new version instead, which Windows also records as its install date.
   - *Is the BIOS up to date?* Nothing on the PC can tell, and every maker publishes BIOS versions
     differently, so the tab shows the BIOS's age and a **Find BIOS updates** button. It opens the support
     site of Dell, HP or Lenovo, which finds the PC's downloads by itself, Windows Update for Surface, or

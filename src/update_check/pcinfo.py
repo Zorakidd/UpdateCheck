@@ -33,6 +33,8 @@ _BIOS = r"HARDWARE\DESCRIPTION\System\BIOS"
 _PROCESSOR = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
 _WINDOWS = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
 _SECURE_BOOT = r"SYSTEM\CurrentControlSet\Control\SecureBoot\State"
+# Where Windows keeps, for each version it was upgraded from, a key named "Source OS (Updated on ...)".
+_SETUP = r"SYSTEM\Setup"
 # Either one is there while Windows waits for a restart to finish installing updates.
 _RESTART_KEYS = (
     r"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired",
@@ -104,10 +106,10 @@ def gather(updates: str = "", today: date | None = None) -> list[Section]:
             ("Version", _text(windows, "DisplayVersion") or _text(windows, "ReleaseId")),
             ("OS build", f"{build}.{windows['UBR']}" if build and isinstance(windows.get("UBR"), int) else build),
             ("Updates", updates),
-            ("Installed on", _installed(windows.get("InstallDate"))),
+            ("Installed on", _installed(first_installed(windows.get("InstallDate"), _earlier_installs()))),
             ("System type", _system_type()),
             ("Managed by", _managed_by()),
-        ], action=("Open Windows Update", "ms-settings:windowsupdate")),
+        ]),
         Section("Firmware", [
             ("BIOS", bios_version(bios, today)),
             ("Boot mode", _BOOT_MODES.get(_firmware_type(), "")),
@@ -208,6 +210,14 @@ def management(domain: str | None, tenant: str | None) -> str:
     return "\n".join(parts) or "Not managed by an organization"
 
 
+def first_installed(current: Any, earlier: list[Any]) -> int | None:
+    """When Windows was first installed on this PC, in seconds since 1970. Windows moves its install date to
+    the day of each upgrade to a new version, so the earliest of the current and the earlier versions' dates
+    wins."""
+    stamps = [stamp for stamp in (current, *earlier) if isinstance(stamp, int) and stamp > 0]
+    return min(stamps, default=None)
+
+
 def _date(day: date) -> str:
     return f"{day:%b} {day.day}, {day.year}"
 
@@ -222,6 +232,16 @@ def _values(path: str) -> dict[str, Any]:
             return {name: value for name, value, _ in entries}
     except OSError:
         return {}
+
+
+def _earlier_installs() -> list[Any]:
+    """The install dates of the versions of Windows this PC was upgraded from."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _SETUP, access=winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+            names = [winreg.EnumKey(key, index) for index in range(winreg.QueryInfoKey(key)[0])]
+    except OSError:
+        return []
+    return [_values(rf"{_SETUP}\{name}").get("InstallDate") for name in names if name.startswith("Source OS")]
 
 
 def _text(values: dict[str, Any], name: str) -> str:
@@ -287,7 +307,7 @@ def _system_drive() -> str:
 
 
 def _installed(timestamp: Any) -> str:
-    """The day Windows was installed, or last upgraded to a new version, from seconds since 1970."""
+    """A day from seconds since 1970, as the tab shows it."""
     if not isinstance(timestamp, int) or timestamp <= 0:
         return ""
     try:

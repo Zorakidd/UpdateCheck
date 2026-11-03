@@ -118,6 +118,11 @@ def _ago(day: date, today: date) -> str:
     return f"{days // 30} months ago"
 
 
+def _on(day: date) -> str:
+    """'Nov 3', with the year when it isn't this one."""
+    return _day(day) if day.year == local_now().year else f"{_day(day)}, {day.year}"
+
+
 def _when(day: date, hour: int) -> str:
     return f"{day:%a}, {_day(day)} at {hour:02d}:00"
 
@@ -366,6 +371,9 @@ class PendingCard(StepCard):
                 text, color = "Nothing waiting", SUCCESS_TEXT
             case _:
                 text, color = "", MUTED
+        # Windows Update also says when it last installed updates.
+        if text and (installed := self.checks.last_installed(self.step.id)):
+            text = f"{text} · last installed {_on(installed)}"
         last, _ = super()._meta()
         if text and last:
             return f"{text} · {last[0].lower()}{last[1:]}", color
@@ -457,9 +465,9 @@ class DriverRow(ctk.CTkFrame):
             messagebox.showerror(TITLE, f"Couldn't open {what}.\n\n{error}", parent=self)
 
 
-def windows_update_text(status: str, count: int, last_installed: date | None, restart: bool) -> str:
-    """What the PC info tab says about Windows Update: whether anything is waiting, whether a restart is, and
-    when updates were last installed."""
+def windows_update_text(status: str, count: int, restart: bool) -> str:
+    """What the PC info tab says about Windows Update: whether anything is waiting, and whether a restart is.
+    When updates were last installed is the checklist's to say, in the Windows Update step."""
     lines = [{
         pending.CHECKING: "Asking Windows Update…",
         pending.NOTHING_PENDING: "Up to date",
@@ -467,8 +475,6 @@ def windows_update_text(status: str, count: int, last_installed: date | None, re
     }.get(status, "Couldn't ask Windows Update")]
     if restart:
         lines.append("Restart to finish installing updates")
-    if last_installed:
-        lines.append(f"Last installed {_day(last_installed)}, {last_installed.year}")
     return "\n".join(lines)
 
 
@@ -571,7 +577,7 @@ class InfoPage(ctk.CTkScrollableFrame):
 
     def _updates(self) -> str:
         status, count = self.checks.status(pending.WINDOWS_UPDATE)
-        return windows_update_text(status, count, self.checks.last_installed(pending.WINDOWS_UPDATE), self._restart)
+        return windows_update_text(status, count, self._restart)
 
     def _build(self, sections: list[pcinfo.Section]) -> None:
         for widget in (*self.titles, *self.cards):
