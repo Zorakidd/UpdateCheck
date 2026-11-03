@@ -196,7 +196,7 @@ def bios_page(bios: dict[str, Any]) -> str:
     for name, site in _SUPPORT_SITES.items():
         if maker.startswith(name):
             return site
-    return "https://www.bing.com/search?q=" + urllib.parse.quote_plus(f"{model(bios)} BIOS update".strip())
+    return "https://duckduckgo.com/?q=" + urllib.parse.quote_plus(f"{model(bios)} BIOS update".strip())
 
 
 def management(domain: str | None, tenant: str | None) -> str:

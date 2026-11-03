@@ -84,7 +84,7 @@ def test_brand_pcs_get_their_makers_support_site_and_others_a_search_for_their_m
         "https://support.hp.com/",
     )
     assert bios_page({"SystemManufacturer": "Microsoft Corporation"}) == "ms-settings:windowsupdate"
-    assert bios_page(ASROCK) == "https://www.bing.com/search?q=ASRock+Z690+PG+Velocita+BIOS+update"
+    assert bios_page(ASROCK) == "https://duckduckgo.com/?q=ASRock+Z690+PG+Velocita+BIOS+update"
 
 
 @pytest.mark.parametrize(
