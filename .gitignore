@@ -1,13 +1,14 @@
-# Python-generated files
+# Rust build output
+/target
+
+# Left over from the Python version: PyInstaller's output and Python's caches
+/build/
+/dist/
 __pycache__/
 *.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
 .venv
 
-# Backlog files
+# Private notes, and the separate projects checked out beside this one
 Backlog.txt
+/Windows-Debloater
+/EasyHardwareInfo

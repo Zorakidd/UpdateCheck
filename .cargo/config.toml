@@ -1,0 +1,6 @@
+# The windows-gnu toolchain links with the GNU linker by default, which turns the import libraries that
+# rustc writes for the Windows crates (raw-dylib) into an .exe that crashes before main. Rust's own copy of
+# LLVM's linker reads them correctly. The MSVC toolchain is not affected.
+[target.x86_64-pc-windows-gnu]
+linker = "rust-lld"
+rustflags = ["-C", "linker-flavor=ld.lld"]

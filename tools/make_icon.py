@@ -1,4 +1,4 @@
-"""Draw the app icon, src/update_check/icon.ico: a circular update arrow around a check, in the app's blue.
+"""Draw the app icon, assets/icon.ico: a circular update arrow around a check, in the app's blue.
 
     uv run --no-project --with pillow python tools/make_icon.py
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-ICON = Path(__file__).resolve().parents[1] / "src" / "update_check" / "icon.ico"
+ICON = Path(__file__).resolve().parents[1] / "assets" / "icon.ico"
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 # The app's accent blues, lighter at the top.
 TOP, BOTTOM = (59, 130, 246), (29, 78, 216)

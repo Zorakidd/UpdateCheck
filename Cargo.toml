@@ -1,0 +1,61 @@
+[package]
+name = "update-check"
+version = "0.2.0"
+edition = "2024"
+description = "Weekly update checklist with reminders, PC info and app cleanup for Windows"
+license = "MIT"
+repository = "https://github.com/Zorakidd/Update-check"
+publish = false
+
+[[bin]]
+name = "UpdateCheck"
+path = "src/main.rs"
+
+[dependencies]
+# Only the wgpu renderer, and of wgpu only Direct3D 12: every Windows 10 and 11 PC has it, with WARP as the
+# software fallback, and leaving out Vulkan and OpenGL keeps the build and the start-up small.
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "wgpu_no_default_features"] }
+wgpu = { version = "30", default-features = false, features = ["dx12"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+sha2 = "0.11"
+windows = { version = "0.62", features = [
+    "ApplicationModel",
+    "Foundation",
+    "Foundation_Collections",
+    "Management_Deployment",
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_UpdateAgent",
+    "Win32_System_Variant",
+] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_NetworkManagement_NetManagement",
+    "Win32_Networking_WinHttp",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_System_TpmBaseServices",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
