@@ -1,4 +1,5 @@
 - Sicher stellen das das ganze enterprise level ist
 - Hinzufügen von dem Uninstall powershell skrip
 -- update dazu; es soll anzeigen wie viel bloatware noch deinstalliert werden kann. mit ggfs tutiral bei z.b. edge wie man es desintalliert (in settings unter app etc.)
+-- es soll auch ein log swchreiben und der soll keine errors enthalten/übersichtlich sein
 - das ganze in rusdt rewirten...
