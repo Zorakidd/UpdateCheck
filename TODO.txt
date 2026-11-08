@@ -1,13 +1,35 @@
-- Sicherstellen, dass das Ganze Markt-Level ist.
-- Hinzufügen des Uninstall-PowerShell-Skripts.
-  - Update dazu: Es soll anzeigen, wie viel Bloatware noch deinstalliert werden kann, mit ggfs. Tutorial, z. B. bei Edge, wie man es deinstalliert (in den Einstellungen unter Apps etc.).
-  - Es soll auch ein Log schreiben, und das Log soll keine Errors enthalten bzw. übersichtlich sein.
-- Hardware-Info zeigt nicht den RAM-Hersteller und welche Sticks es sind; also 32 GB an sich etc. ist gut.
-  - Ebenso Intel, aber ich hätte dann lieber einen Detail-Anhak-Kasten, wo ich dann Genaueres sehe. Gleiches für die Grafikkarte, dann auch Grafikspeicher und extra Drives.
-- In D:\Repos\Update-check\EasyHardwareInfo reinschauen.
-- In D:\Repos\Update-check\Windows-Debloater reinschauen.
-- USB-Zurücksetzen-Befehl mit Sicherheitsprüfung.
-- Das Ganze maximal nutzerfreundlich gestalten und idiotensicher bei Löschvorgängen.
-- Performant machen.
-- Optimieren.
-- Das Ganze in Rust rewriten.
+Stand 08.11.2026, auf dem Branch rust-rewrite (lokal committet, nicht gepusht):
+
+- [x] Sicherstellen, dass das Ganze Markt-Level ist.
+  Release-Build mit Versionsinfo, Manifest und Icon; das Selbst-Update prüft den SHA-256-Wert von GitHub; die Logs
+  rotieren; 134 Tests, Clippy ohne Warnungen; Bedienung per Tastatur; eine Gruppenrichtlinie schaltet das
+  Selbst-Update für Firmen ab.
+- [x] Hinzufügen des Uninstall-PowerShell-Skripts.
+  Eingebaut als Tab „Apps“, ohne PowerShell: Die Apps werden über die Windows-API entfernt, nur für das eigene Konto
+  und ohne Adminrechte. Der Store hat jede davon, falls man eine zurückhaben will.
+  - [x] Oben steht, wie viele Apps noch entfernt werden können. Für Edge (nur im EWR, wo Windows es erlaubt),
+    OneDrive und Testversionen steht Schritt für Schritt da, wie es in den Einstellungen geht.
+  - [x] Schreibt removed-apps.log neben die Checkliste: pro Vorgang eine Überschrift, pro App eine Zeile
+    („Removed“, „Already gone“ oder „Not removed:“ mit dem Grund in Klartext statt Fehlercode), am Ende die Summe.
+- [x] Hardware-Info zeigt RAM-Hersteller und die einzelnen Riegel; die Übersicht bleibt bei „32 GB“ etc.
+  - [x] Kasten „Show details“: jeder Riegel mit Hersteller, Teilenummer, Größe und Takt; der Prozessor mit Kernen,
+    Threads und Caches; der Grafikspeicher jeder Grafikkarte; jedes Laufwerk mit Modell, Größe, Anschluss und
+    Volumes; das Mainboard.
+- [x] In EasyHardwareInfo reingeschaut: GPU, CPU, Mainboard, BIOS, RAM und Laufwerke zeigt jetzt der Tab „PC info“,
+  „Copy to clipboard“ ersetzt die Textdatei.
+- [x] In Windows-Debloater reingeschaut: Dessen App-Liste ist übernommen, ohne Systemkomponenten und ohne
+  Alltagsapps wie Rechner, Fotos, Editor oder Paint, die nie angeboten werden.
+- [x] USB-Zurücksetzen mit Sicherheitsprüfung (in den Einstellungen): nur USB-Laufwerke und Speicherkarten, nie das
+  Laufwerk, von dem Windows oder die App läuft; zeigt, was drauf ist; man muss „ERASE“ tippen; das Skript prüft als
+  Administrator direkt vor dem Löschen alles noch einmal.
+- [x] Maximal nutzerfreundlich und idiotensicher bei Löschvorgängen: Entfernen fragt vorher, ein gelöschter Schritt
+  lässt sich 8 Sekunden lang mit „Undo“ oder Strg+Z zurückholen.
+- [x] Performant: Die Prüfung beim Anmelden dauert 17 ms statt 535 ms (Median von 12 Messungen, Python-Build zum
+  Vergleich), das Fenster ist nach etwa 0,3–0,4 s da.
+- [x] Optimieren.
+- [x] Das Ganze in Rust rewriten: eine .exe von etwa 10 MB, die Checkliste der Python-Version wird übernommen.
+
+Noch zu tun (bewusst nicht automatisch gemacht):
+- Version 0.2.0 auf GitHub veröffentlichen: target\release\UpdateCheck.exe an ein Release mit dem Tag v0.2.0
+  hängen. Danach aktualisieren sich installierte Python-Kopien von selbst.
+- Der Autostart zeigt noch auf dist\UpdateCheck.exe (die Python-Version); den habe ich nicht angefasst.
