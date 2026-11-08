@@ -1,7 +1,13 @@
-- Sicher stellen das das ganze enterprise level ist
-- Hinzufügen von dem Uninstall powershell skrip
--- update dazu; es soll anzeigen wie viel bloatware noch deinstalliert werden kann. mit ggfs tutiral bei z.b. edge wie man es desintalliert (in settings unter app etc.)
--- es soll auch ein log swchreiben und der soll keine errors enthalten/übersichtlich sein
-- hardware info sagt nicht ram hersteller und welche sticks es sind, also 32 GB an sich etc ist gut 
-eben so intel aber ich hätte dan lieber einen deteail anhak kastzen wo ich dann genaueres sehe. Gleiche für Grafikkarte dann auch gradfikspeicher.und extra droives
-- das ganze in rusdt rewirten...
+- Sicherstellen, dass das Ganze Markt-Level ist.
+- Hinzufügen des Uninstall-PowerShell-Skripts.
+  - Update dazu: Es soll anzeigen, wie viel Bloatware noch deinstalliert werden kann, mit ggfs. Tutorial, z. B. bei Edge, wie man es deinstalliert (in den Einstellungen unter Apps etc.).
+  - Es soll auch ein Log schreiben, und das Log soll keine Errors enthalten bzw. übersichtlich sein.
+- Hardware-Info zeigt nicht den RAM-Hersteller und welche Sticks es sind; also 32 GB an sich etc. ist gut.
+  - Ebenso Intel, aber ich hätte dann lieber einen Detail-Anhak-Kasten, wo ich dann Genaueres sehe. Gleiches für die Grafikkarte, dann auch Grafikspeicher und extra Drives.
+- In D:\Repos\Update-check\EasyHardwareInfo reinschauen.
+- In D:\Repos\Update-check\Windows-Debloater reinschauen.
+- USB-Zurücksetzen-Befehl mit Sicherheitsprüfung.
+- Das Ganze maximal nutzerfreundlich gestalten und idiotensicher bei Löschvorgängen.
+- Performant machen.
+- Optimieren.
+- Das Ganze in Rust rewriten.
