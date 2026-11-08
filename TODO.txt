@@ -2,4 +2,6 @@
 - Hinzufügen von dem Uninstall powershell skrip
 -- update dazu; es soll anzeigen wie viel bloatware noch deinstalliert werden kann. mit ggfs tutiral bei z.b. edge wie man es desintalliert (in settings unter app etc.)
 -- es soll auch ein log swchreiben und der soll keine errors enthalten/übersichtlich sein
+- hardware info sagt nicht ram hersteller und welche sticks es sind, also 32 GB an sich etc ist gut 
+eben so intel aber ich hätte dan lieber einen deteail anhak kastzen wo ich dann genaueres sehe. Gleiche für Grafikkarte dann auch gradfikspeicher.und extra droives
 - das ganze in rusdt rewirten...

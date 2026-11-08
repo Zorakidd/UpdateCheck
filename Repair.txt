@@ -1,0 +1,167 @@
+1.Zwischenspeicher leeren: Einstellungen->System->Speicher->Temporäre Dateien, (ACHTUNG: Den Download-Ordner überprüfen!), alles auswählen.
+
+Weitere Empfehlungen zur Systemwartung sind:
+Überprüfung der Autostart-Programme
+Deinstallation nicht verwendeter Anwendungen
+
+Alle Befehle sind in der Eingabeaufforderung (cmd) und PowerShell im Administrator-Modus auszuführen (Rechtsklick -> Als Administrator ausführen).
+
+commands:
+
+DISM /Online /Cleanup-image /Scanhealth        (Sucht nur, repariert nichts)
+DISM.exe /Online /Cleanup-image /Restorehealth (Repariert beschädigte Systemdateien und verbessert die Systemintegrität auf einem Windows-Betriebssystem)
+
+//alternative if broken/doesn't work:
+DISM.exe /Online /Cleanup-Image /RestoreHealth /Source:C:\RepairSource\Windows /LimitAccess
+
+sfc/scannow (Scant dein System auf beschädigte Systemdateien und kann diese gegebenenfalls reparieren.)
+
+
+Festplatten check:
+CHKDSK    (Überprüfung des Dateisystems auf Fehler, Statusbericht über den Zustand des Dateisystems, keine automatische Fehlerbehebung.)
+chkdsk/f  (Überprüfung und Reparatur von Dateisystemfehlern, Behebung von logischen Problemen, Verbesserung der Stabilität des Dateisystems.)
+chkdsk/r  (Vollständige Überprüfung der Festplatte, Fehlererkennung und -behebung, Reparatur beschädigter Sektoren und Dateien.)
+
+Programme:
+Speicherdiagnose (Windows-Tool zur Überprüfung des Arbeitsspeichers auf Fehler, Tests im Restart-Modus, Bericht über gefundene Fehler. 
+                  Bitte beachte, dass dieser Test sehr lange dauern kann und nur bei RAM-Problemen verwendet werden sollte.)
+sigverif.exe     (Überprüft digitale Signaturen von Systemdateien und Treibern, erkennt mögliche Sicherheitsrisiken oder Beschädigungen.)
+
+cmd admin dns flush:
+ipconfig/flushdns
+
+Upgrade all apps:
+winget upgrade --all --include-unknown
+
+
+Zusätzliche Windows Funktionen entfernen:
+
+Einstellungen->Apps->Apps & Features->Optionale Features:
+Internet Explorer 11
+Windows Hello-Gesichtserkennung
+Windows-Fax und -Scan
+Schrittaufzeichnung
+Media Player Legacy
+
+
+General App uninstall:
+"Müll" Apps deinstallieren mit Powershell:
+
+Get-AppxPackage -AllUsers Microsoft.549981C3F5F10 | Remove-AppxPackage
+
+
+(Einstellungen--> Gaming--> Xbox game bar ausschhalten)
+Get-AppxPackage -AllUsers *Spotify* | Remove-AppxPackage
+
+
+Get-AppxPackage -AllUsers *XboxGamingOverlay* | Remove-AppxPackage
+Wenn gamingoverlay nervt:
+https://apps.microsoft.com/detail/9nzkpstsnw4p
+https://apps.microsoft.com/detail/9nzkpstsnw4p?hl=de-de&gl=DE
+Windows Medienwiedergabe
+https://apps.microsoft.com/detail/9wzdncrfj3pt
+https://apps.microsoft.com/detail/9wzdncrfj3pt?hl=de-de&gl=KH
+
+
+
+Network checking stuff, und mehr:
+netstat
+
+Portchecking:
+netstat /af
+
+PC Start:
+
+Restart:
+Shutdown /r
+
+To enter System BIOS:
+shutdown /r /fw /f /t 0
+
+systeminfo | find /i "Installationsdatum"
+
+
+Update list:
+1.Erneute Überprüfung: Zwischenspeicher leeren: Einstellungen->System->Speicher->Temporäre Dateien, (ACHTUNG: Den Download-Ordner überprüfen!), alles auswählen.
+Windows Update
+Microsoft Store
+Razer, "Sordware"
+Nvidia-Grafikkartentreiber
+Browser (aktualisieren oder nach unnötigen Erweiterungen suchen. Zusätzlich: only HTTPS anschalten, und Erweiterungen hinzufügen wie: uBlock Origin und Ghostery)
+Steam,Riot Launcher,Java,VPN etc.
+
+Nach allem würde ich generell nochmal Zwischenspeicher Dateien löschen und sfc/scannow ausführen.
+
+
+
+USB zurücksetzen:
+cmd admin
+
+diskpart 
+list disk
+select disk X
+
+clean
+create partition primary
+select partition 1
+format fs=ntfs quick
+exit
+
+
+Netwerk test:
+
+ping -n 50 8.8.8.8
+
+Lookup- was installiert ist
+Get-AppxPackage | Select-Object Name
+Get-AppxPackage | Select-Object Name | Sort-Object Name
+
+Löschbare:
+Get-AppxPackage -AllUsers | Where-Object {$_.NonRemovable -eq $false} | Select-Object Name, PackageFullName | Sort-Object Name
+
+Vollername:
+Get-AppxPackage | Select Name, PackageFullName | Out-Host
+
+
+PC Teile finden:
+
+Für GPU:
+Entweder Taskmanager oder Befehl. FÜR DIE GENAUE GPU, GPU-Z RUNTERLADEN. NICHT INSTALLIEREN!!!
+Befehl:
+Get-CimInstance Win32_VideoController | Select-Object Name, AdapterCompatibility, DriverVersion, VideoProcessor
+
+Für Prozessor:
+Get-CimInstance Win32_Processor | Select-Object Name, Manufacturer, MaxClockSpeed, NumberOfCores, NumberOfLogicalProcessors
+
+Für Mainboard:
+Get-CimInstance Win32_BaseBoard | Select-Object Manufacturer, Product, SerialNumber, Version
+
+Für dein BIOS:
+Get-CimInstance Win32_BIOS | Select-Object Manufacturer, SMBIOSBIOSVersion, ReleaseDate, SerialNumber, Version
+
+Für den Ram:
+Get-CimInstance Win32_PhysicalMemory | Select-Object Manufacturer, PartNumber, SerialNumber, Speed, @{Name="Capacity(GB)";Expression={[math]::Round($_.Capacity/1GB,2)}}
+
+Für Festplatte:
+Get-PhysicalDisk | Select-Object FriendlyName, MediaType, Size
+
+
+Für Gehäuse, PSU und CPU-Kühler muss man selber schauen
+
+
+
+
+Xbox-Müll (nur wenn wenn du KEINE XBOX Produkte nutzt):
+
+Get-AppxPackage -AllUsers Microsoft.Xbox.TCUI | Remove-AppxPackage
+Get-AppxPackage -AllUsers *Microsoft.XboxApp* | Remove-AppxPackage
+Get-AppxPackage -AllUsers Microsoft.XboxGameOverlay | Remove-AppxPackage
+Get-AppxPackage -AllUsers Microsoft.XboxGamingOverlay | Remove-AppxPackage
+Get-AppxPackage -AllUsers *XboxGamingOverlay* | Remove-AppxPackage
+Get-AppxPackage -AllUsers Microsoft.XboxIdentityProvider | Remove-AppxPackage
+Get-AppxPackage -AllUsers Microsoft.XboxSpeechToTextOverlay | Remove-AppxPackage
+
+
+ignore:
+Get-AppxPackage -AllUsers -Name "Microsoft.MicrosoftEdge" | Remove-AppxPackage
+Get-AppxPackage -AllUsers -Name "Microsoft.MicrosoftEdgeDevToolsClient" | Remove-AppxPackage

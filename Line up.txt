@@ -1,0 +1,176 @@
+Shift+F10
+
+das hier eingeben
+ncpa.cpl
+
+dann das hier:
+oobe\bypassnro
+
+setup durchgegen und lokalen nutzer erstellen
+
+NIEMALS EDGE STARTEN
+Uninstall Edge (wenn es geht)
+Autostarts ausschalten von OneDrive etc.
+
+
+Darkmode an
+Nachtmodus auf 53
+Übermittlungsoptimierung: aus
+Windows Updates
+Immer warten, bis wirklich alles installiert bzw. auf „Neu starten“ steht.
+Nach Updates suchen > sobald nichts Neues mehr kommt:
+Optionale Updates
+PC neustarten
+
+
+„Datenschutz und Sicherheit“ --> „Suche“, hier „Mein Konto durchsuchen“ alles aus.
+
+„Datenschutz und Sicherheit“ --> „Allgemein". Hier:„Apps die Anzeige personalisierter Werbung...“ und „Websites den Zugriff auf meine Sprachliste gestatten...“ und „Vorgeschlagene Inhalte in der Einstellungs-App anzeigen“ bzw. „Empfehlungen und Angebote in den Einstellungen“ ausschalten.
+
+
+Taskleiste einstellen:
+Taskleistenelemente:
+Suchen: Suchsymbol und Bezeichnung
+Aktive Anwendungen: aus
+Widgets: aus
+
+
+CMD als Admin ausführen und sfc /scannow ausführen
+PC neustarten
+Apps deinstallieren (alles, was nicht genutzt wird, inklusive OneDrive. Optional: AppUinstall nutzen)
+Optionale Features deinstallieren
+PC neustarten
+CMD als Admin ausführen und sfc /scannow ausführen
+Temporäre Dateien löschen
+PC neustarten
+
+
+
+Im Microsoft Store „Automatische Wiedergabe“ deaktivieren und „Personalisierte Erfahrung“ deaktivieren
+Installation über den Microsoft Store:
+Zuerst alle Apps updaten
+
+Browser installieren (vorzugsweise Firefox)
+Firefox einstellen/synchronisieren, wenn nicht bereits getan (Einstellungen der Privatsphäre und AdBlock-Extensions: uBlock Origin, Ghostery, ClearURLs)
+
+Im Browser:
+
+Chipset Driver Installieren:
+
+Bei AMD:
+Wird empfohlen, einfach die AMD App dafür installieren und das leichte auswählen falls auswahl ist:
+https://www.amd.com/de/support/download/drivers.html
+Dem installations Fenster folgen.
+
+WENN AMD GPU:
+AMD Adrenalin installieren (für AMD-GPU-Nutzer, ersetzt NVIDIA App)
+Download: https://www.amd.com/de/support/download/drivers.html
+
+Benachrichtigungen:
+Treiber-Updates: an
+Neuigkeiten und Angebote / Werbe-Benachrichtigungen: aus
+Game Advisor / Spielberater-Benachrichtigungen: aus
+Datenschutz (Privacy):
+Nutzererfahrungsprogramm / User Experience Program: aus
+Absturzberichte automatisch senden: aus (optional)
+AMD Link / Streaming:
+aus, wenn nicht genutzt
+TREIBER INSTALLIEREN (passiert beim ersten Start automatisch bzw. über „Treiber & Software")
+PC neustarten
+
+Bei Intel:
+Optional, kann aber trotzdem installiert werden:
+Das hier ist schnell und einfach:
+https://www.intel.de/content/www/de/de/download/19347/chipset-inf-utility.html
+
+Das ist umständlicher und erfasst auch Graphics
+https://www.intel.de/content/www/de/de/support/detect.html
+Beim ersten fenster Akzeptieren und auf installieren klicken
+ACHTUNG: Beim zweiten Fenster ablehnen.
+
+
+
+WENN NVIDIA GPU:
+NVIDIA App installieren
+
+Einstellungen für NVIDIA App:
+Benachrichtigungen:
+Treiberaktualisierungen: an
+Verfügbare Prämien: aus
+
+
+Info → Privatsphäre:
+Konfiguration, Leistungs- und Nutzungsdaten: aus
+TREIBER INSTALLIEREN
+PC neustarten
+
+
+
+Synapse (für Razer-Nutzer)
+G-Hub für Logitech
+
+Im Microsoft Store:
+Discord
+Spotify (optional)
+
+Im Browser:
+Steam (Steam einstellen):
+
+Oberfläche:
+„24-Stunden-Angabe“ auf An
+„Startort“ auf Bibliothek
+„Steam beim Hochfahren...“ auf aus
+
+Bibliothek:
+„Modus bei niedriger Bandbreite“ auf an
+„Modus bei niedriger Leistung“ auf an
+„Communityinhalte deaktivieren“ auf an
+
+Remote Play:
+„Remote Play“ auf aus
+
+Übertrageung:
+„Datenschutzeinstellungen“ Deaktivieren
+
+
+Falls Nötig
+Ubisoft Connect downloaden und installieren
+
+Spotify / Autostart aus
+Steam / Autostart aus
+Ubisoft Connect / Autostart aus
+Discord / Autostart aus
+
+
+Standardausgabe:
+System-Mix
+
+Standardmikrofon einstellen:
+Microphone
+
+
+Netzwerk auf privat stellen
+
+In CMD als Admin:
+ipconfig /flushdns
+
+Clean Temp
+PC neustarten
+
+Wenn nötig für NAS oder andere Netzwerk Geräte (z.B. ):
+Netzwerk auf Privat stellen
+sonst auf öffentlich lassen
+
+NetwerkDNS
+DNS/Ipv4:
+1.1.1.1
+1.0.0.1
+DNS/Ipv6 DNS
+2606:4700:4700::1111
+2606:4700:4700::1001
+
+Backups:
+Bilder
+Videos
+Dokumente
+Download Ordner
