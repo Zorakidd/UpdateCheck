@@ -1,9 +1,10 @@
 # Rust build output
 /target
 
-# Left over from the Python version: PyInstaller's output and Python's caches
-/build/
-/dist/
+# What the Python version left behind, PyInstaller's output and the test and lint caches, kept out of the way
+/legacy/
+
+# Python's caches, from tools/make_icon.py
 __pycache__/
 *.py[oc]
 .venv
