@@ -1,6 +1,7 @@
 //! The checklist tab: a card for each step, ticked off with a click anywhere on it, that says what the step
 //! has waiting wherever the app can find that out.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use chrono::NaiveDate;
@@ -14,7 +15,7 @@ use egui::{
 use super::{Action, App};
 use crate::graphics::{Card, DriverStatus, Vendor};
 use crate::pending::{self, Status};
-use crate::state::{self, Step};
+use crate::state::{self, State, Step};
 use crate::system;
 use crate::ui::{self, Look, Palette};
 
@@ -28,6 +29,8 @@ const GAP: f32 = 10.0;
 const LOW_SPACE: u64 = 20 * 1024 * 1024 * 1024;
 /// How many of the upgrades waiting a card names before it only counts the rest.
 const ITEMS_SHOWN: usize = 5;
+/// The steps that tick themselves off once their lookup finds nothing waiting.
+const TICKED_WHEN_NOTHING_WAITS: &[&str] = &[state::WINGET_STEP];
 
 /// How a part of a card's line under its title reads: as a plain fact, as something to do, or as good news.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,7 +70,36 @@ struct DriverLines {
     height: f32,
 }
 
+/// The steps to tick off by themselves now: those of `TICKED_WHEN_NOTHING_WAITS` the checklist has, whose lookup
+/// found nothing waiting, and that aren't ticked yet or were unticked by hand this week.
+fn steps_to_tick(
+    state: &State,
+    unticked: &BTreeSet<(Option<NaiveDate>, String)>,
+    status: impl Fn(&str) -> Status,
+) -> Vec<&'static str> {
+    TICKED_WHEN_NOTHING_WAITS
+        .iter()
+        .copied()
+        .filter(|id| state.steps.iter().any(|step| step.id == *id))
+        .filter(|id| !state.done.contains(*id) && !unticked.contains(&(state.cycle_start, (*id).to_owned())))
+        .filter(|id| status(id) == Status::NothingPending)
+        .collect()
+}
+
 impl App {
+    /// Ticks off a step whose lookup found nothing waiting, such as Desktop apps when winget has no upgrades.
+    pub(super) fn tick_steps_with_nothing_waiting(&mut self) {
+        let ids = steps_to_tick(&self.state, &self.unticked, |id| self.pending.status(id));
+        if ids.is_empty() {
+            return;
+        }
+        let now = state::local_now();
+        for id in ids {
+            self.state.set_done(id, true, &now);
+        }
+        self.save();
+    }
+
     pub(super) fn checklist(&mut self, ui: &mut Ui) {
         let p = ui::palette(ui.ctx());
         if self.state.steps.is_empty() {
@@ -341,5 +373,27 @@ mod tests {
         assert_eq!(capitalized("checking\u{2026}"), "Checking\u{2026}");
         assert_eq!(capitalized("3 updates waiting"), "3 updates waiting");
         assert_eq!(capitalized(""), "");
+    }
+
+    #[test]
+    fn desktop_apps_tick_themselves_off_when_winget_has_nothing() {
+        let mut state = State { cycle_start: NaiveDate::from_ymd_opt(2026, 11, 9), ..State::default() };
+        let mut unticked = BTreeSet::new();
+        let nothing = |_: &str| Status::NothingPending;
+        assert_eq!(steps_to_tick(&state, &unticked, nothing), [state::WINGET_STEP]);
+        // Only a lookup that found nothing ticks it, not one that found upgrades, failed or is still running.
+        for status in [Status::Pending(2), Status::CheckFailed, Status::Checking] {
+            assert!(steps_to_tick(&state, &unticked, |_| status).is_empty());
+        }
+        // Unticked by hand, it stays unticked that week, and ticks itself off again the next.
+        unticked.insert((state.cycle_start, state::WINGET_STEP.to_owned()));
+        assert!(steps_to_tick(&state, &unticked, nothing).is_empty());
+        state.cycle_start = NaiveDate::from_ymd_opt(2026, 11, 16);
+        assert_eq!(steps_to_tick(&state, &unticked, nothing), [state::WINGET_STEP]);
+        state.done.insert(state::WINGET_STEP.to_owned());
+        assert!(steps_to_tick(&state, &unticked, nothing).is_empty());
+        state.steps.retain(|step| step.id != state::WINGET_STEP);
+        state.done.clear();
+        assert!(steps_to_tick(&state, &unticked, nothing).is_empty());
     }
 }

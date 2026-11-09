@@ -17,8 +17,9 @@ Windows if you like and keeps itself up to date from GitHub releases.
   **Undo** or Ctrl+Z for a few seconds afterwards.
 - **What's actually waiting.** The Windows Update, Optional driver updates and Desktop apps steps say how
   much is queued up, for example "2 upgrades waiting", looked up in the background while you read the rest.
-  Desktop apps names the packages winget can upgrade, and all three look again when you come back to the
-  window after installing something. The Windows Update step also says when Windows last installed updates,
+  Desktop apps names the packages winget can upgrade, and ticks itself off when winget has none; unticked by
+  hand, it stays unticked that week. All three look again when you come back to the window after installing
+  something. The Windows Update step also says when Windows last installed updates,
   and driver updates include firmware, which on many brand PCs means the BIOS. Neither tool has a
   machine-readable count: winget prints a table in your own language and Windows Update answers only
   through COM. So both are read defensively and say nothing rather than guess. One Windows Update search
@@ -43,6 +44,8 @@ Windows if you like and keeps itself up to date from GitHub releases.
   needs and everyday apps such as Calculator, Photos or Notepad, is never offered.
 - Microsoft Edge (where Windows allows it, in the European Economic Area), OneDrive and trial software can
   only be removed in Windows' Settings, so the tab says step by step how.
+- **Ignore**, beside each app, keeps it: the tab no longer offers it, and neither the tab nor the checklist
+  counts it. Ignored apps are listed at the end of the tab, each with **Show again**.
 - Each removal is written to `removed-apps.log` beside the checklist, one line per app, with the reason in
   plain words where one couldn't be removed.
 

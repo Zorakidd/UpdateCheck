@@ -305,27 +305,76 @@ pub fn paint_check(ui: &Ui, rect: Rect, checked: bool, hovered: bool, fill: Colo
 
 /// A check box with its text beside it, the whole row clickable. Returns whether it was clicked.
 pub fn check_row(ui: &mut Ui, checked: &mut bool, text: &str, note: &str) -> Response {
-    let p = palette(ui.ctx());
     let width = ui.available_width();
-    let text_width = (width - CHECK_SIZE - 12.0).max(80.0);
-    let title = ui.painter().layout(text.to_owned(), regular(13.0), p.text, text_width);
-    let note = (!note.is_empty()).then(|| ui.painter().layout(note.to_owned(), regular(12.0), p.muted, text_width));
-    let height = (title.size().y + note.as_ref().map_or(0.0, |note| note.size().y + 1.0)).max(CHECK_SIZE);
+    let (title, note) = check_texts(ui, text, note, width);
+    let height = check_texts_height(&title, note.as_ref()).max(CHECK_SIZE);
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
+    paint_check_row(ui, rect, rect.top(), response, checked, text, title, note)
+}
+
+/// A check row with a button at its right end that does something else with the item, such as setting it
+/// aside. The row is clickable up to the button. Returns the row's response, then the button's.
+pub fn check_row_with_button(
+    ui: &mut Ui,
+    checked: &mut bool,
+    text: &str,
+    note: &str,
+    id: Id,
+    button: &str,
+) -> (Response, Response) {
+    let size = button_size(ui, button, Look::Secondary);
+    let width = ui.available_width();
+    let (title, note) = check_texts(ui, text, note, width - size.x - 16.0);
+    let texts_height = check_texts_height(&title, note.as_ref());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, texts_height.max(CHECK_SIZE).max(size.y)), Sense::hover());
+    let row = Rect::from_min_max(rect.min, pos2(rect.right() - size.x - 16.0, rect.bottom()));
+    let response = ui.interact(row, id.with("row"), Sense::click());
+    let top = rect.center().y - texts_height / 2.0;
+    let response = paint_check_row(ui, row, top, response, checked, text, title, note);
+    let place = Rect::from_min_size(pos2(rect.right() - size.x, rect.center().y - size.y / 2.0), size);
+    (response, button_at(ui, place, id, button, Look::Secondary, true))
+}
+
+/// A check row's text and note, laid out beside the box in a row `width` wide.
+fn check_texts(ui: &Ui, text: &str, note: &str, width: f32) -> (Arc<egui::Galley>, Option<Arc<egui::Galley>>) {
+    let p = palette(ui.ctx());
+    let width = (width - CHECK_SIZE - 12.0).max(80.0);
+    let title = ui.painter().layout(text.to_owned(), regular(13.0), p.text, width);
+    let note = (!note.is_empty()).then(|| ui.painter().layout(note.to_owned(), regular(12.0), p.muted, width));
+    (title, note)
+}
+
+fn check_texts_height(title: &egui::Galley, note: Option<&Arc<egui::Galley>>) -> f32 {
+    title.size().y + note.map_or(0.0, |note| note.size().y + 1.0)
+}
+
+/// Toggles a check row when it was clicked and paints it, its text starting at `top`.
+#[allow(clippy::too_many_arguments)]
+fn paint_check_row(
+    ui: &Ui,
+    rect: Rect,
+    top: f32,
+    response: Response,
+    checked: &mut bool,
+    text: &str,
+    title: Arc<egui::Galley>,
+    note: Option<Arc<egui::Galley>>,
+) -> Response {
+    let p = palette(ui.ctx());
     if response.clicked() {
         *checked = !*checked;
     }
     response.widget_info(|| WidgetInfo::selected(Role::CheckBox, ui.is_enabled(), *checked, text));
     if ui.is_rect_visible(rect) {
         let first_line = title.rows.first().map_or(CHECK_SIZE, |row| row.height());
-        let check = Rect::from_min_size(pos2(rect.left(), rect.top() + (first_line - CHECK_SIZE) / 2.0), Vec2::splat(CHECK_SIZE));
+        let check = Rect::from_min_size(pos2(rect.left(), top + (first_line - CHECK_SIZE) / 2.0), Vec2::splat(CHECK_SIZE));
         paint_check(ui, check, *checked, response.hovered(), p.accent);
         focus_ring(ui, check, &response, 6);
         let left = rect.left() + CHECK_SIZE + 12.0;
         let title_height = title.size().y;
-        ui.painter().galley(pos2(left, rect.top()), title, p.text);
+        ui.painter().galley(pos2(left, top), title, p.text);
         if let Some(note) = note {
-            ui.painter().galley(pos2(left, rect.top() + title_height + 1.0), note, p.muted);
+            ui.painter().galley(pos2(left, top + title_height + 1.0), note, p.muted);
         }
     }
     response.on_hover_cursor(CursorIcon::PointingHand)

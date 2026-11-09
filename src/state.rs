@@ -124,6 +124,8 @@ pub struct State {
     pub last_done: BTreeMap<String, NaiveDate>,
     /// The first day of each week whose checklist was finished, oldest first.
     pub completed_weeks: Vec<NaiveDate>,
+    /// The apps the Apps tab no longer offers or counts, by package, or by name for one only Settings removes.
+    pub ignored_apps: BTreeSet<String>,
 }
 
 impl Default for State {
@@ -140,6 +142,7 @@ impl Default for State {
             offered_steps,
             last_done: BTreeMap::new(),
             completed_weeks: Vec::new(),
+            ignored_apps: BTreeSet::new(),
         }
     }
 }
@@ -274,6 +277,7 @@ impl State {
             "offered_steps": self.offered_steps.iter().collect::<Vec<_>>(),
             "last_done": last_done,
             "completed_weeks": self.completed_weeks.iter().map(|day| day.to_string()).collect::<Vec<_>>(),
+            "ignored_apps": self.ignored_apps.iter().collect::<Vec<_>>(),
         })
     }
 
@@ -359,6 +363,7 @@ impl State {
             offered_steps,
             last_done,
             completed_weeks,
+            ignored_apps: strings("ignored_apps").unwrap_or_default().into_iter().collect(),
         };
         state.add_new_default_steps();
         state
@@ -543,6 +548,7 @@ mod tests {
         state.roll_over(&at(18, 19, 0));
         state.set_done("a", true, &at(18, 19, 0));
         state.last_reminded = Some(date(2026, 9, 18));
+        state.ignored_apps = ["Microsoft.BingWeather".to_owned(), "Microsoft OneDrive".to_owned()].into();
 
         save(&state, &path).unwrap();
         assert_eq!(load(&path).unwrap(), state);

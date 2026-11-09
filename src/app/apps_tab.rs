@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
-use egui::{Id, Ui};
+use egui::{Id, Rect, Role, Sense, Ui, WidgetInfo, pos2, vec2};
 
 use super::checklist::Tone;
 use super::{Action, App, Page, Tab, Task, finished};
@@ -22,6 +22,7 @@ const FRESH_FOR: Duration = Duration::from_secs(5);
 const FOCUS_RESCAN: Duration = Duration::from_secs(60);
 /// The page in Settings that removes the apps the guides are about.
 const INSTALLED_APPS: &str = "ms-settings:appsfeatures";
+const IGNORE_HINT: &str = "Keep this app: the tab no longer offers it, and nothing counts it. It is listed at the end, to show again.";
 
 #[derive(Default)]
 pub(super) struct AppsPage {
@@ -125,7 +126,10 @@ impl App {
             return Some(("removing apps\u{2026}".to_owned(), Tone::Plain));
         }
         match &self.apps.scan {
-            Some(Ok(scan)) => Some((scan.summary(), if scan.count() > 0 { Tone::ToDo } else { Tone::Good })),
+            Some(Ok(scan)) => {
+                let offered = scan.without(&self.state.ignored_apps);
+                Some((offered.summary(), if offered.count() > 0 { Tone::ToDo } else { Tone::Good }))
+            }
             // The tab says what went wrong; the checklist has nothing to add that would help.
             Some(Err(_)) => None,
             None => self.apps.scanning.is_some().then(|| ("looking for apps\u{2026}".to_owned(), Tone::Plain)),
@@ -135,9 +139,26 @@ impl App {
     /// The apps ticked for removal, in the order the tab lists them.
     fn chosen_apps(&self) -> Vec<apps::App> {
         match &self.apps.scan {
-            Some(Ok(scan)) => scan.apps.iter().filter(|app| self.apps.selected.contains(&app.package)).cloned().collect(),
+            Some(Ok(scan)) => scan
+                .apps
+                .iter()
+                .filter(|app| self.apps.selected.contains(&app.package) && !self.state.ignored_apps.contains(&app.package))
+                .cloned()
+                .collect(),
             _ => Vec::new(),
         }
+    }
+
+    /// Sets an app aside: the tab no longer offers it, and neither the tab nor the checklist counts it.
+    fn ignore_app(&mut self, key: String) {
+        self.apps.selected.remove(&key);
+        self.state.ignored_apps.insert(key);
+        self.save();
+    }
+
+    fn offer_again(&mut self, key: &str) {
+        self.state.ignored_apps.remove(key);
+        self.save();
     }
 
     pub(super) fn apps_tab(&mut self, ui: &mut Ui) {
@@ -149,10 +170,15 @@ impl App {
         });
         let removing = removal.is_some();
         let scanning = self.apps.scanning.is_some();
-        let recommended = match &self.apps.scan {
-            Some(Ok(scan)) => scan.apps.iter().filter(|app| app.recommended).map(|app| app.package.clone()).collect(),
-            _ => Vec::new(),
+        // What the scan found, less the apps set aside with Ignore.
+        let offered = match &self.apps.scan {
+            Some(Ok(scan)) => Some(scan.without(&self.state.ignored_apps)),
+            _ => None,
         };
+        let recommended: Vec<String> = offered
+            .iter()
+            .flat_map(|scan| scan.apps.iter().filter(|app| app.recommended).map(|app| app.package.clone()))
+            .collect();
         let mut retry = false;
         let mut open_log = false;
         let mut select = None;
@@ -168,15 +194,15 @@ impl App {
                 ui::progress(ui, Id::unique("removal"), *index as f32 / (*total).max(1) as f32, p.accent);
                 return;
             }
-            match &self.apps.scan {
-                None => {
-                    ui::text(ui, "Looking for apps\u{2026}", ui::bold(15.0), p.text);
-                }
-                Some(Err(error)) => {
+            match (&offered, &self.apps.scan) {
+                (None, Some(Err(error))) => {
                     let row = super::button_row(ui, Id::unique("rescan"), "Couldn't look for apps", error, "Try again", Look::Secondary, !scanning);
                     retry = row.clicked();
                 }
-                Some(Ok(scan)) => {
+                (None, _) => {
+                    ui::text(ui, "Looking for apps\u{2026}", ui::bold(15.0), p.text);
+                }
+                (Some(scan), _) => {
                     // One button that selects the recommended apps, or clears what is selected.
                     let (label, everything) = if self.apps.selected.is_empty() {
                         ("Select recommended", true)
@@ -219,66 +245,108 @@ impl App {
             None => {}
         }
 
-        let Some(Ok(scan)) = &self.apps.scan else { return };
-        let (listed, guides) = (scan.apps.clone(), scan.guides.clone());
-        let (recommended, others): (Vec<apps::App>, Vec<apps::App>) = listed.into_iter().partition(|app| app.recommended);
+        let Some(scan) = offered else { return };
+        let ignored = match &self.apps.scan {
+            Some(Ok(scan)) => scan.ignored(&self.state.ignored_apps),
+            _ => Vec::new(),
+        };
+        let mut ignore = None;
+        let (recommended, others): (Vec<apps::App>, Vec<apps::App>) = scan.apps.into_iter().partition(|app| app.recommended);
         if !recommended.is_empty() {
             ui::section(ui, "Recommended to remove", 18.0);
-            self.app_list(ui, &recommended, !removing);
+            ignore = ignore.or(self.app_list(ui, &recommended, !removing));
         }
         if !others.is_empty() {
             ui::section(ui, "Other apps", 18.0);
             ui::text(ui, "Remove these only if you don't use them.", ui::regular(12.0), p.muted);
             ui.add_space(6.0);
-            self.app_list(ui, &others, !removing);
+            ignore = ignore.or(self.app_list(ui, &others, !removing));
         }
-        if !guides.is_empty() {
+        if !scan.guides.is_empty() {
             ui::section(ui, "Remove in Settings", 18.0);
             ui::text(ui, "Only Settings can remove these. Open it, then follow the steps.", ui::regular(12.0), p.muted);
             ui.add_space(6.0);
             let mut open_settings = false;
-            for (index, guide) in guides.iter().enumerate() {
+            for (index, guide) in scan.guides.iter().enumerate() {
                 if index > 0 {
                     ui.add_space(8.0);
                 }
                 ui::card(p).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    let id = Id::unique(("guide", index));
-                    if super::button_row(ui, id, &guide.name, &guide.steps, "Open Settings", Look::Secondary, true).clicked() {
-                        open_settings = true;
-                    }
+                    ui::text(ui, &guide.name, ui::bold(14.0), p.text);
+                    ui.add_space(2.0);
+                    ui::text(ui, &guide.steps, ui::regular(12.0), p.muted);
                     if !guide.note.is_empty() {
                         ui.add_space(6.0);
                         ui::text(ui, guide.note, ui::regular(12.0), p.muted);
                     }
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        open_settings |= ui::button(ui, "Open Settings", Look::Secondary).clicked();
+                        ui.add_space(4.0);
+                        if ui::button(ui, "Ignore", Look::Secondary).on_hover_text(IGNORE_HINT).clicked() {
+                            ignore = Some(guide.name.clone());
+                        }
+                    });
                 });
             }
             if open_settings {
                 self.actions.push(Action::OpenForStep { target: INSTALLED_APPS.to_owned(), step: state::APPS_STEP });
             }
         }
+        let mut show_again = None;
+        if !ignored.is_empty() {
+            ui::section(ui, "Ignored", 18.0);
+            ui::text(ui, "Kept, and no longer offered or counted.", ui::regular(12.0), p.muted);
+            ui.add_space(6.0);
+            ui::card(p).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                for (index, (key, name)) in ignored.iter().enumerate() {
+                    if index > 0 {
+                        ui.add_space(8.0);
+                    }
+                    if ignored_row(ui, Id::unique(("show-again", key)), name) {
+                        show_again = Some(key.clone());
+                    }
+                }
+            });
+        }
+        if let Some(key) = ignore {
+            self.ignore_app(key);
+        }
+        if let Some(key) = show_again {
+            self.offer_again(&key);
+        }
     }
 
-    fn app_list(&mut self, ui: &mut Ui, list: &[apps::App], enabled: bool) {
+    /// The apps of one list, each with its check box and an Ignore button. Returns the app to ignore, if one was.
+    fn app_list(&mut self, ui: &mut Ui, list: &[apps::App], enabled: bool) -> Option<String> {
         let p = ui::palette(ui.ctx());
+        let mut ignore = None;
         ui::card(p).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.add_enabled_ui(enabled, |ui| {
                 for (index, app) in list.iter().enumerate() {
                     if index > 0 {
-                        ui.add_space(10.0);
+                        ui.add_space(8.0);
                     }
                     let mut on = self.apps.selected.contains(&app.package);
-                    if ui::check_row(ui, &mut on, &app.name, app.note).clicked() {
+                    let id = Id::unique(("ignore", &app.package));
+                    let (row, button) = ui::check_row_with_button(ui, &mut on, &app.name, app.note, id, "Ignore");
+                    if row.clicked() {
                         if on {
                             self.apps.selected.insert(app.package.clone());
                         } else {
                             self.apps.selected.remove(&app.package);
                         }
                     }
+                    if button.on_hover_text(IGNORE_HINT).clicked() {
+                        ignore = Some(app.package.clone());
+                    }
                 }
             });
         });
+        ignore
     }
 
     /// The Apps tab's footer, which removes what is ticked and stays in view however far the list scrolls.
@@ -300,4 +368,19 @@ impl App {
             self.actions.push(Action::AskRemoveApps(chosen));
         }
     }
+}
+
+/// An app set aside with Ignore, and the button that offers it again. Returns whether the button was clicked.
+fn ignored_row(ui: &mut Ui, id: Id, name: &str) -> bool {
+    let p = ui::palette(ui.ctx());
+    let size = ui::button_size(ui, "Show again", Look::Secondary);
+    let width = ui.available_width();
+    let galley = ui.painter().layout(name.to_owned(), ui::regular(13.0), p.text, (width - size.x - 16.0).max(80.0));
+    let (rect, response) = ui.allocate_exact_size(vec2(width, galley.size().y.max(size.y)), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, name));
+    let text_top = rect.center().y - galley.size().y / 2.0;
+    ui.painter().galley(pos2(rect.left(), text_top), galley, p.text);
+    let place = Rect::from_min_size(pos2(rect.right() - size.x, rect.center().y - size.y / 2.0), size);
+    let button = ui::button_at(ui, place, id, "Show again", Look::Secondary, true);
+    button.on_hover_text(format!("Offers {name} again, and counts it")).clicked()
 }

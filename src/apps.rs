@@ -5,6 +5,7 @@
 //! Only apps on the list below are ever offered. Everything else, including what Windows itself needs and the
 //! everyday apps such as Calculator, Photos or Notepad, is left alone.
 
+use std::collections::BTreeSet;
 use std::io::Write as _;
 use std::path::PathBuf;
 
@@ -172,6 +173,23 @@ impl Scan {
             parts.push(format!("{} in Settings", self.guides.len()));
         }
         parts.join(" · ")
+    }
+
+    /// What the scan found, without the apps set aside with Ignore. `ignored` holds their packages, and the
+    /// names of those only Settings removes.
+    pub fn without(&self, ignored: &BTreeSet<String>) -> Scan {
+        Scan {
+            apps: self.apps.iter().filter(|app| !ignored.contains(&app.package)).cloned().collect(),
+            guides: self.guides.iter().filter(|guide| !ignored.contains(&guide.name)).cloned().collect(),
+        }
+    }
+
+    /// The apps set aside with Ignore that are still installed, as their key in `ignored` and their name, in
+    /// the order the tab lists them.
+    pub fn ignored(&self, ignored: &BTreeSet<String>) -> Vec<(String, String)> {
+        let apps = self.apps.iter().filter(|app| ignored.contains(&app.package)).map(|app| (app.package.clone(), app.name.clone()));
+        let guides = self.guides.iter().filter(|guide| ignored.contains(&guide.name)).map(|guide| (guide.name.clone(), guide.name.clone()));
+        apps.chain(guides).collect()
     }
 }
 
@@ -587,6 +605,23 @@ mod tests {
         assert_eq!(scan.breakdown(), "1 here · 1 in Settings");
         scan.guides.clear();
         assert_eq!(scan.breakdown(), "");
+    }
+
+    #[test]
+    fn ignored_apps_are_neither_offered_nor_counted() {
+        let scan = Scan {
+            apps: vec![app("Tips", "Microsoft.Getstarted"), App { recommended: false, ..app("Clock", "Microsoft.WindowsAlarms") }],
+            guides: vec![Guide { name: "Microsoft OneDrive".to_owned(), steps: String::new(), note: "" }],
+        };
+        let ignored: BTreeSet<String> = ["Microsoft.WindowsAlarms", "Microsoft OneDrive", "Microsoft.BingWeather"].map(str::to_owned).into();
+        let offered = scan.without(&ignored);
+        assert_eq!(offered.apps, vec![app("Tips", "Microsoft.Getstarted")]);
+        assert!(offered.guides.is_empty());
+        assert_eq!(offered.summary(), "1 app can still be removed");
+        // Only what is still installed is listed as ignored.
+        let listed = [("Microsoft.WindowsAlarms", "Clock"), ("Microsoft OneDrive", "Microsoft OneDrive")];
+        assert_eq!(scan.ignored(&ignored), listed.map(|(key, name)| (key.to_owned(), name.to_owned())));
+        assert_eq!(scan.without(&BTreeSet::new()), scan);
     }
 
     /// Lists what this PC has, without removing anything: `cargo test scan_this_pc -- --ignored --nocapture`.

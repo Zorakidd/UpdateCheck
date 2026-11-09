@@ -9,7 +9,7 @@ mod info_tab;
 mod settings;
 mod usb_page;
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::PathBuf;
 use std::process::Child;
 use std::sync::Arc;
@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
+use chrono::NaiveDate;
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use egui::{
@@ -289,6 +290,9 @@ pub struct App {
     dialog_focus_pending: bool,
     actions: Vec<Action>,
     undo: Option<Undo>,
+    /// The steps unticked by hand, with the week they were unticked in, so they aren't ticked off again by
+    /// themselves that week.
+    unticked: BTreeSet<(Option<NaiveDate>, String)>,
     save_failed_shown: bool,
     focused: bool,
     /// Whether a text field had the keyboard, or a pop-up was open, when the last frame was drawn. egui lets
@@ -351,6 +355,7 @@ impl App {
             dialog_focus_pending: false,
             actions: Vec::new(),
             undo: None,
+            unticked: BTreeSet::new(),
             save_failed_shown: false,
             focused: false,
             typing: false,
@@ -607,6 +612,9 @@ impl App {
             Action::Toggle(id) => {
                 let done = !self.state.done.contains(&id);
                 self.state.set_done(&id, done, &state::local_now());
+                if !done {
+                    self.unticked.insert((self.state.cycle_start, id));
+                }
                 self.save();
             }
             Action::OpenStep(id) => self.open_step(&id),
@@ -944,6 +952,7 @@ impl App {
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pending.collect();
+        self.tick_steps_with_nothing_waiting();
         self.drivers.collect();
         self.collect_apps();
         self.collect_info();

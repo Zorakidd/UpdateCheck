@@ -28,7 +28,7 @@ pub enum Start {
     /// A newer version was installed, to be started in this one's place.
     Restart,
     /// Open the window, as a reminder or because it was started by hand.
-    Window { state: State, reminder: bool },
+    Window { state: Box<State>, reminder: bool },
 }
 
 /// What start-up asks of Windows and GitHub, which the tests stand in for.
@@ -85,7 +85,7 @@ pub fn run(check_only: bool, open: impl FnOnce(State, PathBuf, bool) -> Result<(
             ExitCode::SUCCESS
         }
         Ok(Start::Window { state, reminder }) => {
-            let result = open(state, path, reminder);
+            let result = open(*state, path, reminder);
             drop(lock);
             match result {
                 Ok(()) => ExitCode::SUCCESS,
@@ -150,7 +150,7 @@ pub fn prepare(host: &mut impl Host, path: &Path, now: &Now, check_only: bool, f
         state.last_reminded = Some(now.date_naive());
     }
     save(&state, path);
-    Ok(Start::Window { state, reminder: check_only })
+    Ok(Start::Window { state: Box::new(state), reminder: check_only })
 }
 
 /// The checklist, read again after a moment if another program has the file open, as a virus scanner or a
