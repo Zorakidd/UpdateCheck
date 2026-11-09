@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use egui::{Margin, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo, pos2, vec2};
 
-use super::{Action, App, Task, finished};
-use crate::pcinfo::{self, Row, Section};
+use super::{Action, App, Page, Task, finished};
+use crate::pcinfo::{self, Opens, Row, Section};
 use crate::ui::{self, Look};
 use crate::{applog, pending, state};
 
@@ -55,7 +55,9 @@ impl App {
         }
     }
 
-    /// The sections as read, with what Windows Update says now.
+    /// The sections as read, with what Windows Update says now and the devices connected now. The devices come
+    /// last among the hardware, just before Windows: under the device's own summary, or below the drives with
+    /// details turned on.
     fn info_sections(&self) -> Vec<Section> {
         let updates = super::windows_update_text(self.pending.status(pending::WINDOWS_UPDATE), self.info.restart);
         let mut sections = self.info.sections.clone();
@@ -63,6 +65,11 @@ impl App {
             for row in section.rows.iter_mut().filter(|row| row.label == "Updates") {
                 row.value.clone_from(&updates);
             }
+        }
+        if let Some(list) = self.devices.list.as_ref().filter(|_| !sections.is_empty()) {
+            let devices = pcinfo::devices_section(list.as_deref().map_err(String::as_str));
+            let at = sections.iter().position(|section| section.title == "Windows").unwrap_or(sections.len());
+            sections.insert(at, devices);
         }
         sections
     }
@@ -77,7 +84,7 @@ impl App {
         let top = ui.cursor().min;
         let left = UiBuilder::new().max_rect(Rect::from_min_size(top, vec2(width - size.x - 16.0, f32::INFINITY)));
         let mut details = self.info.details;
-        let note = "Memory modules, processor cache, graphics memory and every drive";
+        let note = "Memory modules, processor cache, graphics memory, every drive and device";
         let used = ui.scope_builder(left, |ui| ui::check_row(ui, &mut details, "Show details", note)).response.rect;
         self.info.details = details;
         let place = Rect::from_min_size(pos2(top.x + width - size.x, used.center().y - size.y / 2.0), size);
@@ -117,8 +124,10 @@ impl App {
                 }
             });
         }
-        if let Some(target) = open {
-            self.actions.push(Action::OpenUrl(target));
+        match open {
+            Some(Opens::Url(target)) => self.actions.push(Action::OpenUrl(target)),
+            Some(Opens::Devices) => self.actions.push(Action::Page(Page::Devices)),
+            None => {}
         }
     }
 }

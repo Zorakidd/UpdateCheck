@@ -52,9 +52,15 @@ Windows if you like and keeps itself up to date from GitHub releases.
   edition, version and build, the organization that manages the PC (an Active Directory domain or Microsoft
   Entra ID), the BIOS version and how old it is, the boot mode, Secure Boot and the TPM. It is read from
   the registry, the firmware's tables and Windows itself, in milliseconds and without admin rights.
+- **Connected devices** counts what is plugged in or paired and connected: displays, keyboards and mice,
+  audio, cameras, game controllers, drives and phones, printers. It is the list Windows shows under
+  Bluetooth & devices, one entry per physical thing however many drivers it has. A device Windows has a
+  problem with says so, in words and with Device Manager's code. **Show connected devices** opens a page
+  that lists them by kind with USB or Bluetooth beside each, follows along when something is plugged in or
+  out, and links to Bluetooth & devices and Device Manager.
 - **Show details** adds what matters when buying parts or asking for help: each memory module with its
   maker, part number, size and speed, the processor's cores, threads and caches, each graphics card's video
-  memory, and every drive with its model, size, connection and volumes.
+  memory, every drive with its model, size, connection and volumes, and each connected device by name.
 - **Copy to clipboard** puts it all in plain text.
 - *Is Windows up to date?* The tab answers the way Windows does: by asking Windows Update whether anything
   is waiting, and whether a restart is needed to finish installing updates.

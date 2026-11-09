@@ -1,9 +1,10 @@
-//! The window: the weekly checklist with its Apps and PC info tabs, Settings, and the page that resets a USB
-//! drive. Everything slow, such as asking Windows Update, runs on a thread of its own, so the window never
+//! The window: the weekly checklist with its Apps and PC info tabs, Settings, the page of connected devices and
+//! the page that resets a USB drive. Everything slow, such as asking Windows Update, runs on a thread of its own, so the window never
 //! waits and draws only when something changed.
 
 mod apps_tab;
 mod checklist;
+mod devices_page;
 mod info_tab;
 mod settings;
 mod usb_page;
@@ -30,6 +31,7 @@ use crate::ui::{self, Look};
 use crate::{applog, apps, system};
 
 use apps_tab::AppsPage;
+use devices_page::DevicesPage;
 use info_tab::InfoPage;
 use settings::SettingsPage;
 use usb_page::UsbPage;
@@ -179,6 +181,7 @@ enum Page {
     Main,
     Settings,
     Usb,
+    Devices,
 }
 
 /// How far the page is scrolled and how far it can be, in points, as the last frame left it.
@@ -301,6 +304,7 @@ pub struct App {
     info: InfoPage,
     settings: SettingsPage,
     usb: UsbPage,
+    devices: DevicesPage,
 }
 
 impl App {
@@ -327,6 +331,7 @@ impl App {
             apps: AppsPage::default(),
             info: InfoPage::default(),
             usb: UsbPage::new(),
+            devices: DevicesPage::new(),
             ctx,
             state,
             path,
@@ -434,6 +439,7 @@ impl App {
         }
         self.apps_focus_gained();
         self.usb_focus_gained();
+        self.devices_focus_gained();
     }
 
     fn poll_consoles(&mut self) {
@@ -519,6 +525,7 @@ impl App {
             Tab::Apps => self.apps_visited(),
             Tab::Info => {
                 self.info_visited();
+                self.load_devices();
                 self.pending.refresh([pending::WINDOWS_UPDATE], false);
             }
         }
@@ -526,15 +533,17 @@ impl App {
 
     fn show_page(&mut self, page: Page) {
         self.page = page;
-        if page == Page::Usb {
-            self.usb_visited();
+        match page {
+            Page::Usb => self.usb_visited(),
+            Page::Devices => self.devices_visited(),
+            Page::Main | Page::Settings => {}
         }
     }
 
     fn go_back(&mut self) {
         match self.page {
             Page::Usb => self.show_page(Page::Settings),
-            Page::Settings => self.show_tab(self.tab),
+            Page::Settings | Page::Devices => self.show_tab(self.tab),
             Page::Main => {}
         }
     }
@@ -709,6 +718,7 @@ impl App {
                 Page::Main => self.main_header(ui),
                 Page::Settings => self.sub_header(ui, "Settings"),
                 Page::Usb => self.sub_header(ui, "Reset a USB drive"),
+                Page::Devices => self.sub_header(ui, "Connected devices"),
             }
         });
     }
@@ -831,6 +841,7 @@ impl App {
                         (Page::Main, Tab::Info) => self.info_tab(ui),
                         (Page::Settings, _) => self.settings_page(ui),
                         (Page::Usb, _) => self.usb_page(ui),
+                        (Page::Devices, _) => self.devices_page(ui),
                     }
                 });
             });
@@ -923,6 +934,9 @@ impl App {
         if self.page == Page::Usb {
             consider(self.usb_poll_at());
         }
+        if self.page == Page::Devices {
+            consider(Some(self.devices_poll_at()));
+        }
         ctx.request_repaint_after(next.saturating_duration_since(now));
     }
 }
@@ -935,9 +949,11 @@ impl eframe::App for App {
         self.collect_info();
         self.collect_settings();
         self.collect_usb();
+        self.collect_devices();
         self.poll_consoles();
         self.tick();
         self.usb_poll();
+        self.devices_poll();
 
         let focused = ctx.input(|input| input.focused);
         if focused != self.focused {

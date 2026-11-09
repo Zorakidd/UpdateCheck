@@ -7,6 +7,7 @@
 mod app;
 mod applog;
 mod apps;
+mod devices;
 mod graphics;
 mod hardware;
 mod http;
