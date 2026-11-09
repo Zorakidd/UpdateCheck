@@ -4,3 +4,8 @@
 [target.x86_64-pc-windows-gnu]
 linker = "rust-lld"
 rustflags = ["-C", "linker-flavor=ld.lld"]
+
+# The MSVC toolchain, which the release workflow builds with, links the C runtime as a DLL by default, which
+# not every PC has. Linked in, the .exe runs on its own like the GNU build.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

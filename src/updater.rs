@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use crate::applog;
 use crate::system::{self, VERSION};
 
-pub const GITHUB_REPO: &str = "Zorakidd/Update-check";
+pub const GITHUB_REPO: &str = "Zorakidd/UpdateCheck";
 /// A release's .exe is a few megabytes; anything near this is not one.
 const DOWNLOAD_LIMIT: usize = 100 * 1024 * 1024;
 
@@ -223,6 +223,13 @@ mod tests {
         ] {
             assert_eq!(is_newer(tag, installed), newer, "{tag} vs {installed}");
         }
+    }
+
+    #[test]
+    fn the_running_version_is_one_a_release_tag_compares_with() {
+        assert!(parse_version(VERSION).is_some(), "{VERSION}");
+        assert!(is_newer("v999.0.0", VERSION));
+        assert!(!is_newer(&format!("v{VERSION}"), VERSION));
     }
 
     #[test]

@@ -1,10 +1,11 @@
 [package]
 name = "update-check"
+# Only the major and minor version count here: build.rs makes the number of commits the patch version.
 version = "0.2.0"
 edition = "2024"
 description = "Weekly update checklist with reminders, PC info and app cleanup for Windows"
 license = "MIT"
-repository = "https://github.com/Zorakidd/Update-check"
+repository = "https://github.com/Zorakidd/UpdateCheck"
 publish = false
 
 [[bin]]

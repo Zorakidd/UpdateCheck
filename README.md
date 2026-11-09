@@ -100,7 +100,7 @@ switch in the footer turns this on and off.
 
 ### Updates itself
 
-At most once a day the .exe asks GitHub for the latest release of `Zorakidd/Update-check` (`GITHUB_REPO` in
+At most once a day the .exe asks GitHub for the latest release of `Zorakidd/UpdateCheck` (`GITHUB_REPO` in
 [updater.rs](src/updater.rs)). If its tag is a newer version and an .exe is attached, the app downloads it,
 checks its size and the SHA-256 digest GitHub publishes for it (a download without one isn't installed),
 swaps it in for the running .exe and restarts with the same arguments. Failures are logged and never stop
@@ -154,16 +154,14 @@ The icon, [icon.ico](assets/icon.ico), is drawn by `uv run --no-project --with p
 [build.rs](build.rs) embeds it in the .exe with the version information and the application manifest,
 without a resource compiler.
 
-## Build and release
+## Versions and releases
 
-1. Bump `version` in `Cargo.toml`.
-2. Build the .exe:
-
-   ```
-   cargo build --release
-   ```
-
-3. Publish a GitHub release tagged `v<version>` (for example `v0.2.0`) with
-   `target/release/UpdateCheck.exe` attached. The repository has to be public, since the updater doesn't
-   authenticate. Copies of the earlier Python version (0.1) update to it like to any other release: they
-   keep their checklist and their reminder.
+- **The version counts up by itself.** [build.rs](build.rs) takes the major and minor version from
+  `Cargo.toml` and makes the number of commits the patch version, so each commit is one version higher than
+  the one before, and a build of a commit has the same version on every PC. Raise the major or minor version
+  in `Cargo.toml` only for a big change.
+- **Every push to `main` that changes the app is released.** The [release workflow](.github/workflows/release.yml)
+  runs the tests, builds the .exe and publishes it as the release `v<version>`, which the copies people run
+  install within a day. A push that changes only documentation or notes releases nothing.
+- The repository has to stay public, since the updater doesn't authenticate.
+- `cargo build --release` builds the same .exe locally, at `target/release/UpdateCheck.exe`.

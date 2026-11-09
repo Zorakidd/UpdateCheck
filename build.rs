@@ -71,6 +71,8 @@ struct Resource {
 fn main() {
     println!("cargo:rerun-if-changed=assets/icon.ico");
     println!("cargo:rerun-if-changed=build.rs");
+    let version = version();
+    println!("cargo:rustc-env=UPDATE_CHECK_VERSION={version}");
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR"));
     let ico = fs::read("assets/icon.ico").expect("assets/icon.ico");
     let images = parse_ico(&ico);
@@ -84,13 +86,38 @@ fn main() {
     fs::write(out.join("window-icon.png"), &window_icon.data).expect("write window-icon.png");
 
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        let version = env::var("CARGO_PKG_VERSION").expect("CARGO_PKG_VERSION");
         let object = coff(&resources(&images, &version));
         let path = out.join("resources.o");
         fs::write(&path, object).expect("write resources.o");
         // An object on the command line is linked in whole, unlike a member of a library.
         println!("cargo:rustc-link-arg-bins={}", path.display());
     }
+}
+
+/// Cargo.toml's major and minor version, with the number of commits as the patch version. Each commit counts
+/// the version up by itself, and a build of the same commit has the same version on every PC and in the
+/// release workflow. Outside a git repository, Cargo.toml's version as it is.
+fn version() -> String {
+    let package = env::var("CARGO_PKG_VERSION").expect("CARGO_PKG_VERSION");
+    let Some(commits) = git(&["rev-list", "--count", "HEAD"]) else { return package };
+    // A commit, checkout or reset moves HEAD, which rewrites a branch's ref, or HEAD itself, and adds to
+    // HEAD's reflog. Watching a file that doesn't exist would run this script on every build.
+    let branch = git(&["symbolic-ref", "-q", "HEAD"]);
+    for file in ["HEAD", "logs/HEAD", "packed-refs"].into_iter().chain(branch.as_deref()) {
+        if let Some(path) = git(&["rev-parse", "--git-path", file]).filter(|path| PathBuf::from(path).exists()) {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
+    let major = env::var("CARGO_PKG_VERSION_MAJOR").expect("CARGO_PKG_VERSION_MAJOR");
+    let minor = env::var("CARGO_PKG_VERSION_MINOR").expect("CARGO_PKG_VERSION_MINOR");
+    format!("{major}.{minor}.{commits}")
+}
+
+/// What git prints, trimmed, if it runs and succeeds and prints anything.
+fn git(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("git").args(args).output().ok()?;
+    let text = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    (output.status.success() && !text.is_empty()).then_some(text)
 }
 
 fn u16_at(data: &[u8], at: usize) -> u16 {

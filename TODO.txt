@@ -29,7 +29,5 @@ Stand 08.11.2026, auf dem Branch rust-rewrite (lokal committet, nicht gepusht):
 - [x] Optimieren.
 - [x] Das Ganze in Rust rewriten: eine .exe von etwa 10 MB, die Checkliste der Python-Version wird übernommen.
 
-Noch zu tun (bewusst nicht automatisch gemacht):
-- Version 0.2.0 auf GitHub veröffentlichen: target\release\UpdateCheck.exe an ein Release mit dem Tag v0.2.0
-  hängen. Danach aktualisieren sich installierte Python-Kopien von selbst.
-- Der Autostart zeigt noch auf dist\UpdateCheck.exe (die Python-Version); den habe ich nicht angefasst.
+- [x] Release: Jeder Push auf main, der die App ändert, wird von GitHub Actions getestet, gebaut und als Release
+  veröffentlicht. Die Version zählt sich selbst hoch, die Patch-Version ist die Zahl der Commits.

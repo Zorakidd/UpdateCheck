@@ -38,12 +38,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 pub const APP_NAME: &str = "UpdateCheck";
 pub const TITLE: &str = "Update Check";
 pub const USER_AGENT: &str = "Update-Check";
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Cargo.toml's major and minor version, with the number of commits as the patch version: see build.rs.
+pub const VERSION: &str = env!("UPDATE_CHECK_VERSION");
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const POLICY_KEY: &str = r"SOFTWARE\Policies\UpdateCheck";
-/// The task the first versions registered for every user alike, replaced by one per user.
-const SHARED_TASK: &str = "UpdateCheck";
 const INSTANCE_MUTEX: &str = r"Local\UpdateCheck.SingleInstance";
 
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -628,15 +627,12 @@ pub fn enable_autostart(hour: u32) -> Result<(), String> {
     let command = reminder_command();
     let start = format!("{:02}:00", hour % 24);
     schtasks(&["/Create", "/F", "/SC", "DAILY", "/ST", &start, "/TN", &task_name(), "/TR", &command], true)?;
-    // The task the first versions shared between all users, if this user may delete it.
-    let _ = schtasks(&["/Delete", "/F", "/TN", SHARED_TASK], false);
     set_reg_string(Hive::CurrentUser, RUN_KEY, APP_NAME, &command).map_err(|error| error.to_string())
 }
 
 pub fn disable_autostart() -> Result<(), String> {
     delete_reg_value(Hive::CurrentUser, RUN_KEY, APP_NAME).map_err(|error| error.to_string())?;
     let _ = schtasks(&["/Delete", "/F", "/TN", &task_name()], false);
-    let _ = schtasks(&["/Delete", "/F", "/TN", SHARED_TASK], false);
     Ok(())
 }
 

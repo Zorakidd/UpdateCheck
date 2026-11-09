@@ -1,0 +1,63 @@
+# Each push to main that changes the app is tested, built and published as a release, which the copies
+# people run install within a day. Nobody bumps the version by hand: build.rs makes the number of commits
+# the patch version, so a release is numbered after the commit it was built from.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "assets/**"
+      - "build.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The whole history with its tags: the version counts the commits.
+          fetch-depth: 0
+
+      - name: Update Rust
+        run: rustup update stable --no-self-update && rustc --version
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exe = "target/release/UpdateCheck.exe"
+          $version = (Get-Item $exe).VersionInfo.ProductVersion
+          $tag = "v$version"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            "$tag is out already."
+            exit 0
+          }
+          $previous = git describe --tags --abbrev=0 --match "v*" 2> $null
+          if ($LASTEXITCODE -eq 0) {
+            $notes = (git log --no-merges --format="- %s" "$previous..HEAD") -join "`n"
+          } else {
+            $notes = "The first release."
+          }
+          gh release create $tag $exe --title "Update Check $version" --notes $notes --target $env:GITHUB_SHA
