@@ -17,7 +17,6 @@ use windows_sys::Win32::System::SystemInformation::{GetFirmwareType, GetPhysical
 use windows_sys::Win32::System::Threading::GetCurrentProcess;
 use windows_sys::Win32::System::TpmBaseServices::Tbsi_GetDeviceInfo;
 
-use crate::devices::{Device, Kind};
 use crate::graphics::{self, Adapter};
 use crate::hardware::{self, Disk, Memory, MemoryModule, Topology};
 use crate::system::{self, Hive, size};
@@ -60,22 +59,13 @@ impl Row {
     }
 }
 
-/// What a section's button opens.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Opens {
-    /// A web page or a page of Settings.
-    Url(String),
-    /// The app's page of connected devices.
-    Devices,
-}
-
 /// A card of the tab: its title, its rows, and perhaps a button under them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Section {
     pub title: &'static str,
     pub rows: Vec<Row>,
-    /// The button's label, and what it opens.
-    pub action: Option<(&'static str, Opens)>,
+    /// The button's label, and the page or settings it opens.
+    pub action: Option<(&'static str, String)>,
 }
 
 impl Section {
@@ -205,7 +195,7 @@ pub fn gather(updates: &str, today: NaiveDate) -> Vec<Section> {
                 Row::always("Secure Boot", secure_boot()),
                 Row::always("TPM", tpm()),
             ],
-            action: Some(("Find BIOS updates", Opens::Url(bios_page(&bios)))),
+            action: Some(("Find BIOS updates", bios_page(&bios))),
         },
     ];
     // Whatever couldn't be read is left out, and so is a section with nothing left in it.
@@ -217,48 +207,6 @@ pub fn gather(updates: &str, today: NaiveDate) -> Vec<Section> {
         })
         .filter(|section| !section.rows.is_empty())
         .collect()
-}
-
-/// The devices plugged in or paired: how many of each kind, and with details turned on, their names. A device
-/// that isn't working says so in either view. `devices` is an error when Windows couldn't list them.
-pub fn devices_section(devices: Result<&[Device], &str>) -> Section {
-    let rows = match devices {
-        Err(_) => vec![Row::always("Devices", "Windows couldn't list them")],
-        Ok([]) => vec![Row::always("Devices", "None plugged in or paired")],
-        Ok(devices) => {
-            let mut rows = vec![Row::new("Devices", device_counts(devices), Show::Summary)];
-            for kind in Kind::ALL {
-                let names: Vec<&str> = devices.iter().filter(|device| device.kind == kind).map(|device| device.name.as_str()).collect();
-                if !names.is_empty() {
-                    rows.push(Row::details(kind.label(), names.join("\n")));
-                }
-            }
-            let problems: Vec<String> = devices
-                .iter()
-                .filter_map(|device| device.problem.as_ref().map(|problem| format!("{}: {problem}", device.name)))
-                .collect();
-            if !problems.is_empty() {
-                rows.push(Row::always("Problems", problems.join("\n")));
-            }
-            rows
-        }
-    };
-    Section { title: DEVICES, rows, action: Some(("Show connected devices", Opens::Devices)) }
-}
-
-/// The title of the connected devices' section.
-pub const DEVICES: &str = "Connected devices";
-
-/// How many devices of each kind there are, as "2 displays, 1 camera".
-pub fn device_counts(devices: &[Device]) -> String {
-    Kind::ALL
-        .iter()
-        .filter_map(|kind| {
-            let count = devices.iter().filter(|device| device.kind == *kind).count();
-            (count > 0).then(|| kind.count(count))
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 /// The sections as plain text for the clipboard, as far as they are shown.
@@ -874,11 +822,7 @@ mod tests {
                 ],
             ),
             Section::new("Processor", vec![Row::details("Cores", "12 (8 performance + 4 efficient)")]),
-            Section {
-                title: "Firmware",
-                rows: vec![Row::always("TPM", "2.0")],
-                action: Some(("Find BIOS updates", Opens::Url("https://example.com".to_owned()))),
-            },
+            Section { title: "Firmware", rows: vec![Row::always("TPM", "2.0")], action: Some(("Find BIOS updates", "https://example.com".to_owned())) },
         ];
         assert_eq!(as_text(&sections, false), "Device\nName: PC\nProcessor: Intel, 12 cores\n\nFirmware\nTPM: 2.0");
         assert_eq!(
@@ -1051,34 +995,5 @@ mod tests {
     #[test]
     fn restart_pending_is_read_without_error() {
         let _ = restart_pending();
-    }
-
-    #[test]
-    fn connected_devices_are_counted_and_named_with_details() {
-        use crate::devices::Connection;
-        let device = |name: &str, kind, problem: Option<&str>| Device {
-            name: name.to_owned(),
-            kind,
-            connection: Some(Connection::Usb),
-            problem: problem.map(str::to_owned),
-        };
-        let devices = [
-            device("BenQ GL2780", Kind::Display, None),
-            device("LG ULTRAGEAR", Kind::Display, None),
-            device("Razer Kiyo", Kind::Camera, Some("No driver installed (code 28)")),
-        ];
-        let section = devices_section(Ok(&devices));
-        assert_eq!(section.action, Some(("Show connected devices", Opens::Devices)));
-        assert_eq!(
-            as_text(std::slice::from_ref(&section), false),
-            "Connected devices\nDevices: 2 displays, 1 camera\nProblems: Razer Kiyo: No driver installed (code 28)"
-        );
-        assert_eq!(
-            as_text(std::slice::from_ref(&section), true),
-            "Connected devices\nDisplays: BenQ GL2780, LG ULTRAGEAR\nCameras: Razer Kiyo\n\
-             Problems: Razer Kiyo: No driver installed (code 28)"
-        );
-        assert_eq!(as_text(&[devices_section(Ok(&[]))], true), "Connected devices\nDevices: None plugged in or paired");
-        assert_eq!(as_text(&[devices_section(Err("Access denied"))], false), "Connected devices\nDevices: Windows couldn't list them");
     }
 }

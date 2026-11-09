@@ -58,35 +58,6 @@ impl Kind {
             Kind::Other => "Other devices",
         }
     }
-
-    /// A short name, for a label beside the devices of the kind.
-    pub fn label(self) -> &'static str {
-        match self {
-            Kind::Display => "Displays",
-            Kind::Input => "Input",
-            Kind::Audio => "Audio",
-            Kind::Camera => "Cameras",
-            Kind::Controller => "Controllers",
-            Kind::Storage => "Drives",
-            Kind::Printer => "Printers",
-            Kind::Other => "Other",
-        }
-    }
-
-    /// How many there are, in words: "2 displays", "1 keyboard or mouse".
-    pub fn count(self, count: usize) -> String {
-        let (one, more) = match self {
-            Kind::Display => ("display", "displays"),
-            Kind::Input => ("keyboard or mouse", "keyboards and mice"),
-            Kind::Audio => ("audio device", "audio devices"),
-            Kind::Camera => ("camera", "cameras"),
-            Kind::Controller => ("game controller", "game controllers"),
-            Kind::Storage => ("drive or phone", "drives and phones"),
-            Kind::Printer => ("printer or scanner", "printers and scanners"),
-            Kind::Other => ("other device", "other devices"),
-        };
-        format!("{count} {}", if count == 1 { one } else { more })
-    }
 }
 
 /// How a device is connected, where that can be told.
@@ -260,6 +231,33 @@ pub fn problem_text(code: u32) -> String {
         _ => "Not working properly",
     };
     format!("{what} (code {code})")
+}
+
+/// The devices as plain text for the clipboard, by kind as the page shows them: "Razer Kiyo (USB)", and what
+/// is wrong with one after a colon.
+pub fn as_text(devices: &[Device]) -> String {
+    Kind::ALL
+        .iter()
+        .filter(|kind| devices.iter().any(|device| device.kind == **kind))
+        .map(|kind| {
+            let mut lines = vec![kind.title().to_owned()];
+            lines.extend(devices.iter().filter(|device| device.kind == *kind).map(line));
+            lines.join("\n")
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// One device as plain text: "Razer Kiyo (USB)", and what is wrong with it after a colon.
+pub fn line(device: &Device) -> String {
+    let mut line = device.name.clone();
+    if let Some(connection) = device.connection {
+        line.push_str(&format!(" ({})", connection.name()));
+    }
+    if let Some(problem) = &device.problem {
+        line.push_str(&format!(": {problem}"));
+    }
+    line
 }
 
 // --- Asking Windows ---------------------------------------------------------------------------------------------
@@ -568,10 +566,25 @@ mod tests {
     }
 
     #[test]
-    fn counts_are_in_words() {
-        assert_eq!(Kind::Display.count(2), "2 displays");
-        assert_eq!(Kind::Input.count(1), "1 keyboard or mouse");
-        assert_eq!(Kind::Storage.count(3), "3 drives and phones");
+    fn the_clipboard_gets_each_kind_with_its_devices() {
+        let device = |name: &str, kind, connection, problem: Option<&str>| Device {
+            name: name.to_owned(),
+            kind,
+            connection,
+            problem: problem.map(str::to_owned),
+        };
+        let devices = [
+            device("BenQ GL2780", Kind::Display, None, None),
+            device("LG ULTRAGEAR", Kind::Display, None, None),
+            device("Razer Kiyo", Kind::Camera, Some(Connection::Usb), Some("No driver installed (code 28)")),
+            device("Xbox Wireless Controller", Kind::Controller, Some(Connection::Bluetooth), None),
+        ];
+        assert_eq!(
+            as_text(&devices),
+            "Displays\nBenQ GL2780\nLG ULTRAGEAR\n\nCameras\nRazer Kiyo (USB): No driver installed (code 28)\n\n\
+             Game controllers\nXbox Wireless Controller (Bluetooth)"
+        );
+        assert_eq!(as_text(&[]), "");
     }
 
     #[test]

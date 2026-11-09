@@ -525,7 +525,6 @@ impl App {
             Tab::Apps => self.apps_visited(),
             Tab::Info => {
                 self.info_visited();
-                self.load_devices();
                 self.pending.refresh([pending::WINDOWS_UPDATE], false);
             }
         }
@@ -928,6 +927,7 @@ impl App {
         consider(self.ask_at);
         consider(self.undo.as_ref().map(|undo| undo.until));
         consider(self.info.copied_until);
+        consider(self.devices.copied.map(|(_, until)| until));
         if !self.consoles.is_empty() {
             consider(Some(self.consoles_checked + CONSOLE_POLL));
         }

@@ -52,15 +52,9 @@ Windows if you like and keeps itself up to date from GitHub releases.
   edition, version and build, the organization that manages the PC (an Active Directory domain or Microsoft
   Entra ID), the BIOS version and how old it is, the boot mode, Secure Boot and the TPM. It is read from
   the registry, the firmware's tables and Windows itself, in milliseconds and without admin rights.
-- **Connected devices** counts what is plugged in or paired and connected: displays, keyboards and mice,
-  audio, cameras, game controllers, drives and phones, printers. It is the list Windows shows under
-  Bluetooth & devices, one entry per physical thing however many drivers it has. A device Windows has a
-  problem with says so, in words and with Device Manager's code. **Show connected devices** opens a page
-  that lists them by kind with USB or Bluetooth beside each, follows along when something is plugged in or
-  out, and links to Bluetooth & devices and Device Manager.
 - **Show details** adds what matters when buying parts or asking for help: each memory module with its
   maker, part number, size and speed, the processor's cores, threads and caches, each graphics card's video
-  memory, every drive with its model, size, connection and volumes, and each connected device by name.
+  memory, and every drive with its model, size, connection and volumes.
 - **Copy to clipboard** puts it all in plain text.
 - *Is Windows up to date?* The tab answers the way Windows does: by asking Windows Update whether anything
   is waiting, and whether a restart is needed to finish installing updates.
@@ -70,6 +64,12 @@ Windows if you like and keeps itself up to date from GitHub releases.
   differently, so the tab shows the BIOS's age and a **Find BIOS updates** button. It opens the support site
   of Dell, HP or Lenovo, which finds the PC's downloads by itself, Windows Update for Surface, or else a web
   search for the model's BIOS.
+- **Show connected devices**, beside it, opens a page of everything plugged into the PC or paired with it and
+  connected, by kind: displays, keyboards and mice, audio, cameras, game controllers, drives and phones,
+  printers and scanners. Each device says whether it is connected by USB or Bluetooth and what Windows finds
+  wrong with it, such as a missing driver. The list follows along when something is plugged in or out.
+  **Copy** beside a device copies that device, **Copy all** the whole list; the PC info tab's own copy
+  leaves the devices out.
 
 ### When Windows misbehaves
 
