@@ -1133,7 +1133,11 @@ fn dialog_text(dialog: &Dialog, settings: &state::Settings) -> DialogText {
                 notes.push(format!("You can install {again} again from the Microsoft Store at any time."));
             }
             if removed < count {
-                notes.push("Resume is turned off for everyone on this PC. The end of the Apps tab turns it on again.".to_owned());
+                notes.push(
+                    "Resume is turned off for everyone on this PC, so Windows asks for administrator rights. The end of \
+                     the Apps tab turns it on again."
+                        .to_owned(),
+                );
             }
             DialogText {
                 title,

@@ -281,7 +281,8 @@ const RESUME_NOTE: &str = "Continues on this PC what you had open on your phone.
 const RESUME_EXE: &str = "CrossDeviceResume.exe";
 /// The policy that keeps Windows from starting CrossDeviceResume.exe, as the manifest of the package it is part
 /// of names it (Connectivity/DisableCrossDeviceResume). Its default here applies unless an organization sets
-/// it, and Windows lets whoever is signed in at the PC change it.
+/// it. Only administrators can change it: the access list grants it to whoever is signed in at the PC too, but
+/// only under a condition that a standard sign-in on Windows 11 Pro doesn't meet.
 const RESUME_POLICY: &str = r"SOFTWARE\Microsoft\PolicyManager\default\Connectivity\DisableCrossDeviceResume";
 /// Where an organization's setting for the policy goes, which then decides.
 const RESUME_MANAGED: &str = r"SOFTWARE\Microsoft\PolicyManager\current\device\Connectivity";
@@ -297,9 +298,14 @@ fn resume_on() -> Option<bool> {
     Some(system::reg_dword(Hive::LocalMachine, RESUME_POLICY, "value")? != 1)
 }
 
-/// Turns Resume on or off for the PC, and the switch in Settings with it.
+/// Turns Resume on or off for the PC, and the switch in Settings with it. Windows asks for administrator rights
+/// unless the app already has them; [`declined`] tells whether the user said no.
 pub fn set_resume(on: bool) -> io::Result<()> {
-    system::set_reg_dword(Hive::LocalMachine, RESUME_POLICY, "value", u32::from(!on))?;
+    let data = u32::from(!on);
+    match system::set_reg_dword(Hive::LocalMachine, RESUME_POLICY, "value", data) {
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => set_resume_policy_as_admin(data)?,
+        result => result?,
+    }
     // Settings only has the switch once Resume has started for this account; the policy is what counts.
     if system::reg_key_exists(Hive::CurrentUser, RESUME_SETTING)
         && let Err(error) = system::set_reg_dword(Hive::CurrentUser, RESUME_SETTING, "IsResumeAllowed", u32::from(on))
@@ -309,16 +315,30 @@ pub fn set_resume(on: bool) -> io::Result<()> {
     Ok(())
 }
 
+/// Sets the policy with reg.exe as administrator, without a window.
+fn set_resume_policy_as_admin(data: u32) -> io::Result<()> {
+    let parameters = format!(r#"add "HKLM\{RESUME_POLICY}" /v value /t REG_DWORD /d {data} /f /reg:64"#);
+    match system::run_elevated(&system::system32("reg.exe"), &parameters, Duration::from_secs(30)) {
+        Ok(Some(0)) => Ok(()),
+        Ok(Some(code)) => Err(io::Error::other(format!("reg.exe ended with exit code {code}"))),
+        Ok(None) => Err(io::Error::other("reg.exe didn't finish within 30 seconds")),
+        Err(code) => Err(io::Error::from_raw_os_error(code as i32)),
+    }
+}
+
+/// Whether setting Resume failed because the user said no to administrator rights.
+pub fn declined(error: &io::Error) -> bool {
+    error.raw_os_error() == Some(system::ERROR_CANCELLED as i32)
+}
+
 /// Turns Resume off and ends CrossDeviceResume.exe, which Windows then no longer starts.
 fn turn_off_resume() -> Outcome {
     if let Err(error) = set_resume(false) {
         applog::warning("apps", format!("Couldn't turn off Resume: {error}"));
-        let sentence = match error.kind() {
-            io::ErrorKind::PermissionDenied => "Only an administrator can turn it off.",
-            _ => "Windows couldn't turn it off.",
-        };
-        let code = error.raw_os_error().unwrap_or(0) as u32;
-        return Outcome::NotRemoved(format!("{sentence} (error 0x{:08X})", 0x8007_0000 | (code & 0xFFFF)));
+        return Outcome::NotRemoved(match declined(&error) {
+            true => "It needs administrator rights, and Windows didn't get them.".to_owned(),
+            false => format!("Windows couldn't turn it off: {error}"),
+        });
     }
     // This ends the copy of this account only; copies of others signed in end when they sign out.
     let taskkill = system::system32("taskkill.exe");

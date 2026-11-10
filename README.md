@@ -70,8 +70,8 @@ so you see at a glance which steps matter this week.
 - **Remove selected** asks first, then removes the ticked apps for your account only. The Microsoft Store
   has every one of them if you want one back.
 - **Resume**, which continues on the PC what you had open on your phone, is part of Windows and can't be
-  removed. Ticking it turns it off for everyone on the PC, so `CrossDeviceResume.exe` no longer runs in the
-  background, and **Turn on** at the end of the tab brings it back.
+  removed. Ticking it turns it off for everyone on the PC, which takes administrator rights, so
+  `CrossDeviceResume.exe` no longer runs in the background. **Turn on** at the end of the tab brings it back.
 - Microsoft Edge (where Windows allows it, in the European Economic Area), OneDrive and trial software can only be removed in Windows'
   Settings, so the tab tells you step by step how.
 - **Ignore** keeps an app: it is no longer offered or counted, and is listed at the end of the tab with
@@ -128,14 +128,13 @@ Windows startup. Then delete `UpdateCheck.exe` and the folder `%APPDATA%\UpdateC
   Policy Preferences, an Intune script or any other way of setting a registry value, to roll out new
   versions yourself. The app then never contacts GitHub, and Settings says that your organization keeps it
   up to date.
-- **Rights.** Nothing needs administrator rights except Check system files, Repair Windows and Reset a USB
-  drive, which ask through UAC. The reminder is a per-user sign-in entry (`HKCU\...\Run`) and a per-user
+- **Rights.** Nothing needs administrator rights except Check system files, Repair Windows, Reset a USB
+  drive and turning Resume off or on, which ask through UAC. The reminder is a per-user sign-in entry (`HKCU\...\Run`) and a per-user
   Task Scheduler task, `UpdateCheck (<user name>)`, both running `UpdateCheck.exe --check`, so several users
   on one PC each have their own. They are re-registered if the .exe moves. Apps are only ever removed for
   the signed-in user. Turning off Resume sets the local default of the policy
   `Connectivity/DisableCrossDeviceResume` (`HKLM\SOFTWARE\Microsoft\PolicyManager\default\Connectivity\DisableCrossDeviceResume`,
-  `value`), which Windows lets the signed-in user change; where an MDM sets the policy, the tab doesn't offer
-  Resume.
+  `value`) with `reg.exe`; where an MDM sets the policy, the tab doesn't offer Resume.
 - **Network.** Requests go through WinHTTP with the PC's proxy settings and Windows' certificate store.
 - **Updates.** Each release is built from this repository's code by GitHub Actions. The app installs a new
   version only after checking it against the SHA-256 digest GitHub publishes for the download.

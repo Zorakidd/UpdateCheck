@@ -46,6 +46,8 @@ pub(super) struct AppsPage {
     removal_at: Arc<AtomicUsize>,
     removal_names: Vec<String>,
     result: Option<String>,
+    /// Turning Resume on again, which may wait for the user to give administrator rights.
+    turning_on: Option<Task<std::io::Result<()>>>,
 }
 
 impl App {
@@ -107,6 +109,18 @@ impl App {
             });
             self.apps.selected.clear();
             self.apps.removal_names.clear();
+            self.start_scan();
+        }
+        if let Some(result) = finished(&mut self.apps.turning_on) {
+            match result {
+                Some(Ok(())) => {}
+                Some(Err(error)) if apps::declined(&error) => {}
+                Some(Err(error)) => {
+                    applog::warning("apps", format!("Couldn't turn on Resume: {error}"));
+                    self.message("Couldn't turn on Resume", format!("Windows couldn't turn it on: {error}"));
+                }
+                None => self.message("Couldn't turn on Resume", "Turning it on stopped unexpectedly."),
+            }
             self.start_scan();
         }
     }
@@ -316,7 +330,8 @@ impl App {
             ui::card(p).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 let text = "Windows starts it again at the next sign-in after you turn it on.";
-                turn_on = super::button_row(ui, Id::unique("turn-on-resume"), "Resume", text, "Turn on", Look::Secondary, !removing)
+                let enabled = !removing && self.apps.turning_on.is_none();
+                turn_on = super::button_row(ui, Id::unique("turn-on-resume"), "Resume", text, "Turn on", Look::Secondary, enabled)
                     .clicked();
             });
         }
@@ -348,16 +363,11 @@ impl App {
         }
     }
 
+    /// Turns Resume on in the background, since Windows may first ask for administrator rights.
     fn turn_on_resume(&mut self) {
-        if let Err(error) = apps::set_resume(true) {
-            applog::warning("apps", format!("Couldn't turn on Resume: {error}"));
-            let body = match error.kind() {
-                std::io::ErrorKind::PermissionDenied => "Only an administrator can turn it on.".to_owned(),
-                _ => format!("Windows couldn't turn it on: {error}"),
-            };
-            self.message("Couldn't turn on Resume", body);
+        if self.apps.turning_on.is_none() {
+            self.apps.turning_on = Some(Task::spawn(&self.ctx, "turning on Resume", || apps::set_resume(true)));
         }
-        self.start_scan();
     }
 
     /// The apps of one list, each with its check box and an Ignore button. Returns the app to ignore, if one was.
