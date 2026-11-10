@@ -1,13 +1,14 @@
 //! Preinstalled apps: the ones that come with Windows or a new PC and that hardly anyone uses. Most can be
 //! removed for this account without administrator rights. A few, such as Microsoft Edge, only Settings can
-//! remove, so for those the app explains where.
+//! remove, so for those the app explains where. Resume is part of Windows, so it is turned off instead.
 //!
 //! Only apps on the list below are ever offered. Everything else, including what Windows itself needs and the
 //! everyday apps such as Calculator, Photos or Notepad, is left alone.
 
 use std::collections::BTreeSet;
-use std::io::Write as _;
+use std::io::{self, Write as _};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use chrono::NaiveDateTime;
 use windows::ApplicationModel::PackageSignatureKind;
@@ -120,8 +121,23 @@ pub struct App {
     pub recommended: bool,
     /// The package's name, which the log records.
     pub package: String,
-    /// The packages to remove: one per version or processor type the app is installed in.
-    full_names: Vec<String>,
+    removal: Removal,
+}
+
+/// How an app goes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Removal {
+    /// Its packages are removed: one per version or processor type the app is installed in.
+    Packages(Vec<String>),
+    /// Resume is part of a package Windows needs, so it is turned off instead.
+    TurnOffResume,
+}
+
+impl App {
+    /// Whether the app is turned off rather than removed.
+    pub fn turns_off(&self) -> bool {
+        self.removal == Removal::TurnOffResume
+    }
 }
 
 /// An app only Settings can remove, and how.
@@ -137,6 +153,8 @@ pub struct Guide {
 pub struct Scan {
     pub apps: Vec<App>,
     pub guides: Vec<Guide>,
+    /// Whether Resume is turned off, so the tab can offer to turn it on again.
+    pub resume_off: bool,
 }
 
 impl Scan {
@@ -181,6 +199,7 @@ impl Scan {
         Scan {
             apps: self.apps.iter().filter(|app| !ignored.contains(&app.package)).cloned().collect(),
             guides: self.guides.iter().filter(|guide| !ignored.contains(&guide.name)).cloned().collect(),
+            resume_off: self.resume_off,
         }
     }
 
@@ -212,7 +231,9 @@ pub fn scan() -> Result<Scan, String> {
         }
         let Ok(full_name) = id.FullName().map(|name| name.to_string()) else { continue };
         if let Some(app) = apps.iter_mut().find(|app| app.package == name) {
-            app.full_names.push(full_name);
+            if let Removal::Packages(full_names) = &mut app.removal {
+                full_names.push(full_name);
+            }
             continue;
         }
         let display = if known.name.is_empty() {
@@ -226,19 +247,85 @@ pub fn scan() -> Result<Scan, String> {
             note: known.note,
             recommended: known.recommended,
             package: name,
-            full_names: vec![full_name],
+            removal: Removal::Packages(vec![full_name]),
+        });
+    }
+    let resume = resume_on();
+    if resume == Some(true) {
+        apps.push(App {
+            name: "Resume".to_owned(),
+            note: RESUME_NOTE,
+            recommended: false,
+            package: RESUME.to_owned(),
+            removal: Removal::TurnOffResume,
         });
     }
     // Two packages can be the same app under an old and a new name, such as Microsoft News.
     apps.sort_by(|a, b| b.recommended.cmp(&a.recommended).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     apps.dedup_by(|a, b| {
         let same = a.name == b.name;
-        if same {
-            b.full_names.append(&mut a.full_names);
+        if same && let (Removal::Packages(from), Removal::Packages(into)) = (&mut a.removal, &mut b.removal) {
+            into.append(from);
         }
         same
     });
-    Ok(Scan { apps, guides: guides() })
+    Ok(Scan { apps, guides: guides(), resume_off: resume == Some(false) })
+}
+
+// Resume.
+
+/// Resume, by its key in the list and among the apps set aside with Ignore.
+pub const RESUME: &str = "CrossDeviceResume";
+const RESUME_NOTE: &str = "Continues on this PC what you had open on your phone. It is part of Windows, so it is \
+                           turned off for everyone on this PC instead of removed.";
+const RESUME_EXE: &str = "CrossDeviceResume.exe";
+/// The policy that keeps Windows from starting CrossDeviceResume.exe, as the manifest of the package it is part
+/// of names it (Connectivity/DisableCrossDeviceResume). Its default here applies unless an organization sets
+/// it, and Windows lets whoever is signed in at the PC change it.
+const RESUME_POLICY: &str = r"SOFTWARE\Microsoft\PolicyManager\default\Connectivity\DisableCrossDeviceResume";
+/// Where an organization's setting for the policy goes, which then decides.
+const RESUME_MANAGED: &str = r"SOFTWARE\Microsoft\PolicyManager\current\device\Connectivity";
+/// The switch for it in Settings, which on its own leaves CrossDeviceResume.exe running.
+const RESUME_SETTING: &str = r"Software\Microsoft\Windows\CurrentVersion\CrossDeviceResume\Configuration";
+
+/// Whether Resume is on: none where Windows doesn't have it, or where an organization decides.
+fn resume_on() -> Option<bool> {
+    let exe = system::windows_dir().join(r"SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy").join(RESUME_EXE);
+    if !exe.exists() || system::reg_dword(Hive::LocalMachine, RESUME_MANAGED, "DisableCrossDeviceResume").is_some() {
+        return None;
+    }
+    Some(system::reg_dword(Hive::LocalMachine, RESUME_POLICY, "value")? != 1)
+}
+
+/// Turns Resume on or off for the PC, and the switch in Settings with it.
+pub fn set_resume(on: bool) -> io::Result<()> {
+    system::set_reg_dword(Hive::LocalMachine, RESUME_POLICY, "value", u32::from(!on))?;
+    // Settings only has the switch once Resume has started for this account; the policy is what counts.
+    if system::reg_key_exists(Hive::CurrentUser, RESUME_SETTING)
+        && let Err(error) = system::set_reg_dword(Hive::CurrentUser, RESUME_SETTING, "IsResumeAllowed", u32::from(on))
+    {
+        applog::warning("apps", format!("Couldn't set the switch for Resume in Settings: {error}"));
+    }
+    Ok(())
+}
+
+/// Turns Resume off and ends CrossDeviceResume.exe, which Windows then no longer starts.
+fn turn_off_resume() -> Outcome {
+    if let Err(error) = set_resume(false) {
+        applog::warning("apps", format!("Couldn't turn off Resume: {error}"));
+        let sentence = match error.kind() {
+            io::ErrorKind::PermissionDenied => "Only an administrator can turn it off.",
+            _ => "Windows couldn't turn it off.",
+        };
+        let code = error.raw_os_error().unwrap_or(0) as u32;
+        return Outcome::NotRemoved(format!("{sentence} (error 0x{:08X})", 0x8007_0000 | (code & 0xFFFF)));
+    }
+    // This ends the copy of this account only; copies of others signed in end when they sign out.
+    let taskkill = system::system32("taskkill.exe");
+    if let Err(error) = system::run_hidden(&taskkill, &["/F", "/IM", RESUME_EXE], Duration::from_secs(10)) {
+        applog::warning("apps", format!("Couldn't end {RESUME_EXE}: {error}"));
+    }
+    Outcome::TurnedOff
 }
 
 // Removing.
@@ -254,6 +341,8 @@ pub enum Outcome {
     Removed,
     /// Removed already, by something else, between the scan and now.
     AlreadyGone,
+    /// Turned off, for an app Windows can't do without.
+    TurnedOff,
     NotRemoved(String),
 }
 
@@ -293,8 +382,12 @@ fn remove_package(manager: &PackageManager, full_name: &str) -> Result<(), (HRES
 
 /// Remove an app for this account.
 pub fn remove(manager: &PackageManager, app: &App) -> Outcome {
+    let full_names = match &app.removal {
+        Removal::Packages(full_names) => full_names,
+        Removal::TurnOffResume => return turn_off_resume(),
+    };
     let mut removed = false;
-    for full_name in &app.full_names {
+    for full_name in full_names {
         match remove_package(manager, full_name) {
             Ok(()) => removed = true,
             Err((PACKAGE_NOT_FOUND, _, _)) => {}
@@ -334,7 +427,11 @@ pub fn result_text(outcomes: &[Outcome]) -> String {
     let failed = outcomes.iter().filter(|outcome| matches!(outcome, Outcome::NotRemoved(_))).count();
     let removed = total - failed;
     let apps = |count: usize| if count == 1 { "1 app".to_owned() } else { format!("{count} apps") };
+    // Resume is the one app turned off instead.
+    let turned_off = outcomes.contains(&Outcome::TurnedOff);
     match failed {
+        0 if turned_off && total == 1 => "Turned off Resume.".to_owned(),
+        0 if turned_off => format!("Removed {} and turned off Resume.", apps(total - 1)),
         0 => format!("Removed {}.", apps(total)),
         _ if removed == 0 => format!("Couldn't remove {}. The log says why.", if total == 1 { "it".to_owned() } else { apps(total) }),
         _ => format!("Removed {removed} of {total} apps. The log says why the others weren't."),
@@ -362,6 +459,7 @@ pub fn log_text(when: NaiveDateTime, apps: &[App], outcomes: &[Outcome]) -> Stri
         let (label, reason) = match outcome {
             Outcome::Removed => ("Removed", String::new()),
             Outcome::AlreadyGone => ("Already gone", String::new()),
+            Outcome::TurnedOff => ("Turned off", String::new()),
             Outcome::NotRemoved(reason) => ("Not removed", format!(": {reason}")),
         };
         if !matches!(outcome, Outcome::NotRemoved(_)) {
@@ -503,7 +601,13 @@ mod tests {
     use super::*;
 
     fn app(name: &str, package: &str) -> App {
-        App { name: name.to_owned(), note: "", recommended: true, package: package.to_owned(), full_names: Vec::new() }
+        App {
+            name: name.to_owned(),
+            note: "",
+            recommended: true,
+            package: package.to_owned(),
+            removal: Removal::Packages(Vec::new()),
+        }
     }
 
     #[test]
@@ -590,6 +694,8 @@ mod tests {
         assert_eq!(result_text(&[failed()]), "Couldn't remove it. The log says why.");
         assert_eq!(result_text(&[failed(), failed()]), "Couldn't remove 2 apps. The log says why.");
         assert_eq!(result_text(&[Outcome::Removed, failed(), Outcome::Removed]), "Removed 2 of 3 apps. The log says why the others weren't.");
+        assert_eq!(result_text(&[Outcome::TurnedOff]), "Turned off Resume.");
+        assert_eq!(result_text(&[Outcome::Removed, Outcome::TurnedOff]), "Removed 1 app and turned off Resume.");
     }
 
     #[test]
@@ -612,6 +718,7 @@ mod tests {
         let scan = Scan {
             apps: vec![app("Tips", "Microsoft.Getstarted"), App { recommended: false, ..app("Clock", "Microsoft.WindowsAlarms") }],
             guides: vec![Guide { name: "Microsoft OneDrive".to_owned(), steps: String::new(), note: "" }],
+            resume_off: false,
         };
         let ignored: BTreeSet<String> = ["Microsoft.WindowsAlarms", "Microsoft OneDrive", "Microsoft.BingWeather"].map(str::to_owned).into();
         let offered = scan.without(&ignored);
@@ -630,11 +737,12 @@ mod tests {
     fn scan_this_pc() {
         let scan = scan().unwrap();
         for app in &scan.apps {
-            println!("{:<28} {:<45} {} {:?}", app.name, app.package, app.recommended, app.full_names);
+            println!("{:<28} {:<45} {} {:?}", app.name, app.package, app.recommended, app.removal);
         }
         for guide in &scan.guides {
             println!("{}: {} {}", guide.name, guide.steps, guide.note);
         }
+        println!("Resume turned off: {}", scan.resume_off);
         println!("{} · {}", scan.summary(), scan.breakdown());
     }
 

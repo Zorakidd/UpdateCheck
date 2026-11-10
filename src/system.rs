@@ -16,7 +16,7 @@ use windows_sys::Win32::System::Diagnostics::Debug::{
 };
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW};
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE, KEY_WOW64_64KEY, REG_SZ,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE, KEY_WOW64_64KEY, REG_DWORD, REG_SZ,
     RRF_RT_REG_BINARY, RRF_RT_REG_DWORD, RRF_RT_REG_QWORD, RRF_RT_REG_SZ,
     RRF_SUBKEY_WOW6464KEY, RegCloseKey, RegDeleteValueW, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW,
     RegSetValueExW,
@@ -282,6 +282,14 @@ fn set_reg_string(hive: Hive, key: &str, value: &str, data: &str) -> io::Result<
     let status = unsafe {
         RegSetValueExW(key.0, wide(value).as_ptr(), 0, REG_SZ, data.as_ptr().cast(), (data.len() * 2) as u32)
     };
+    if status == 0 { Ok(()) } else { Err(os_error(status)) }
+}
+
+/// Sets a DWORD in a key that already exists.
+pub fn set_reg_dword(hive: Hive, key: &str, value: &str, data: u32) -> io::Result<()> {
+    let key = open_key(hive, key, KEY_SET_VALUE).map_err(os_error)?;
+    let data = data.to_le_bytes();
+    let status = unsafe { RegSetValueExW(key.0, wide(value).as_ptr(), 0, REG_DWORD, data.as_ptr(), data.len() as u32) };
     if status == 0 { Ok(()) } else { Err(os_error(status)) }
 }
 

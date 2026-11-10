@@ -1108,17 +1108,36 @@ fn dialog_text(dialog: &Dialog, settings: &state::Settings) -> DialogText {
         },
         Dialog::RemoveApps(apps) => {
             let count = apps.len();
-            let (title, button, again) = match apps.as_slice() {
-                [app] => (format!("Remove {}?", app.name), "Remove".to_owned(), "it"),
-                _ => (format!("Remove {count} apps?"), format!("Remove {count} apps"), "them"),
+            let (title, button) = match apps.as_slice() {
+                [app] if app.turns_off() => (format!("Turn off {}?", app.name), "Turn off".to_owned()),
+                [app] => (format!("Remove {}?", app.name), "Remove".to_owned()),
+                _ => (format!("Remove {count} apps?"), format!("Remove {count} apps")),
             };
-            let names: Vec<String> = apps.iter().map(|app| format!("\u{2022} {}", app.name)).collect();
+            let names: Vec<String> = apps
+                .iter()
+                .map(|app| match app.turns_off() && count > 1 {
+                    true => format!("\u{2022} {} (turned off)", app.name),
+                    false => format!("\u{2022} {}", app.name),
+                })
+                .collect();
+            // Resume is the one app turned off instead.
+            let removed = apps.iter().filter(|app| !app.turns_off()).count();
+            let mut notes = Vec::new();
+            if removed > 0 {
+                let again = match (removed, removed == count) {
+                    (1, true) => "it",
+                    (_, true) => "them",
+                    (1, false) => "the removed app",
+                    _ => "the removed apps",
+                };
+                notes.push(format!("You can install {again} again from the Microsoft Store at any time."));
+            }
+            if removed < count {
+                notes.push("Resume is turned off for everyone on this PC. The end of the Apps tab turns it on again.".to_owned());
+            }
             DialogText {
                 title,
-                body: format!(
-                    "{}\n\nYou can install {again} again from the Microsoft Store at any time.",
-                    names.join("\n")
-                ),
+                body: format!("{}\n\n{}", names.join("\n"), notes.join(" ")),
                 buttons: vec![(button, Look::Danger), ("Cancel".to_owned(), Look::Secondary)],
                 focus: 1,
             }
