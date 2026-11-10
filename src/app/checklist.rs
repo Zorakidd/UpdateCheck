@@ -30,8 +30,20 @@ const LOW_SPACE: u64 = 20 * 1024 * 1024 * 1024;
 /// How many of the upgrades waiting a card names before it only counts the rest.
 const ITEMS_SHOWN: usize = 5;
 /// The steps that tick themselves off once their lookup finds nothing waiting. For Windows Update that includes
-/// no restart still to make.
-const TICKED_WHEN_NOTHING_WAITS: &[&str] = &[state::WINDOWS_UPDATE_STEP, state::DRIVERS_STEP, state::WINGET_STEP];
+/// no restart still to make, for graphics every card's driver known to be up to date, for Microsoft Defender
+/// protection updated within a day, and for Free up space at least `LOW_SPACE` free. The Microsoft Store and
+/// backups have nothing the app can look up.
+const TICKED_WHEN_NOTHING_WAITS: &[&str] = &[
+    state::WINDOWS_UPDATE_STEP,
+    state::DRIVERS_STEP,
+    state::GRAPHICS_STEP,
+    state::WINGET_STEP,
+    state::DEFENDER_STEP,
+    state::STORAGE_STEP,
+    state::APPS_STEP,
+];
+/// Protection updates this old or newer leave nothing for the Defender step to do.
+const DEFENDER_FRESH: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 /// How a part of a card's line under its title reads: as a plain fact, as something to do, or as good news.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,7 +102,7 @@ fn steps_to_tick(
 impl App {
     /// Ticks off a step whose lookup found nothing waiting, such as Desktop apps when winget has no upgrades.
     pub(super) fn tick_steps_with_nothing_waiting(&mut self) {
-        let ids = steps_to_tick(&self.state, &self.unticked, |id| self.pending.status(id));
+        let ids = steps_to_tick(&self.state, &self.unticked, |id| self.step_status(id));
         if ids.is_empty() {
             return;
         }
@@ -99,6 +111,36 @@ impl App {
             self.state.set_done(id, true, &now);
         }
         self.save();
+    }
+
+    /// What a step's lookup found, for the steps that tick themselves off.
+    fn step_status(&self, id: &str) -> Status {
+        let found = |nothing: bool| if nothing { Status::NothingPending } else { Status::Pending(1) };
+        match id {
+            state::GRAPHICS_STEP => {
+                let statuses: Vec<DriverStatus> = self.drivers.cards.iter().map(|card| self.drivers.status(card)).collect();
+                if statuses.is_empty() {
+                    Status::CheckFailed
+                } else if statuses.iter().any(|status| matches!(status, DriverStatus::Checking)) {
+                    Status::Checking
+                } else {
+                    found(statuses.iter().all(|status| matches!(status, DriverStatus::UpToDate(_))))
+                }
+            }
+            state::STORAGE_STEP => match &self.storage {
+                Some((_, free, _)) => found(*free >= LOW_SPACE),
+                None => Status::Checking,
+            },
+            state::APPS_STEP => match self.apps_meta() {
+                Some((_, tone)) => found(tone == Tone::Good),
+                None => Status::Checking,
+            },
+            state::DEFENDER_STEP => match system::defender_updated_ago() {
+                Some(age) => found(age <= DEFENDER_FRESH),
+                None => Status::CheckFailed,
+            },
+            _ => self.pending.status(id),
+        }
     }
 
     pub(super) fn checklist(&mut self, ui: &mut Ui) {
@@ -381,10 +423,7 @@ mod tests {
     fn steps_tick_themselves_off_when_their_lookup_finds_nothing() {
         let mut state = State { cycle_start: NaiveDate::from_ymd_opt(2026, 11, 9), ..State::default() };
         let mut unticked = BTreeSet::new();
-        assert_eq!(
-            steps_to_tick(&state, &unticked, |_| Status::NothingPending),
-            [state::WINDOWS_UPDATE_STEP, state::DRIVERS_STEP, state::WINGET_STEP]
-        );
+        assert_eq!(steps_to_tick(&state, &unticked, |_| Status::NothingPending), TICKED_WHEN_NOTHING_WAITS);
         // Only a lookup that found nothing ticks a step, not one that found something waiting or a restart still
         // to make, or that failed or is still running.
         for status in [Status::Pending(2), Status::RestartPending, Status::CheckFailed, Status::Checking] {

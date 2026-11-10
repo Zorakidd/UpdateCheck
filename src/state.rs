@@ -27,6 +27,7 @@ pub const GRAPHICS_STEP: &str = "graphics";
 pub const WINGET_STEP: &str = "winget";
 pub const STORAGE_STEP: &str = "storage";
 pub const APPS_STEP: &str = "apps";
+pub const DEFENDER_STEP: &str = "defender";
 
 /// The default steps of the first version, which every checklist saved without `offered_steps` was offered.
 const ORIGINAL_DEFAULT_STEPS: [&str; 6] = ["windows-update", "drivers", "store", "winget", "defender", "backup"];

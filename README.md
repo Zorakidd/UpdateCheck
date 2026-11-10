@@ -24,6 +24,8 @@ so you see at a glance which steps matter this week.
   settings page or app. The list starts fresh every week on the day you choose.
 - **Shows what's waiting.** Windows Update, optional driver updates and your desktop apps say how many
   updates are queued, for example "2 upgrades waiting", and each step ticks itself off when there are none.
+  So do Graphics drivers when NVIDIA's driver is up to date, Microsoft Defender when its protection updated
+  within a day, Free up space with 20 GB or more free, and Preinstalled apps once none are left.
 - **Graphics drivers.** Lists your NVIDIA, AMD or Intel graphics with the installed driver, tells you when
   NVIDIA has a newer one, and opens NVIDIA App, AMD Software or Intel Graphics Software for you.
 - **Removes apps you never use.** Preinstalled apps such as Solitaire, the MSN apps or Clipchamp, removed
@@ -132,9 +134,10 @@ Windows startup. Then delete `UpdateCheck.exe` and the folder `UpdateCheck` in y
   drive and turning Resume off or on, which ask through UAC. The reminder is a per-user sign-in entry (`HKCU\...\Run`) and a per-user
   Task Scheduler task, `UpdateCheck (<user name>)`, both running `UpdateCheck.exe --check`, so several users
   on one PC each have their own. They are re-registered if the .exe moves. Apps are only ever removed for
-  the signed-in user. Turning off Resume sets the local default of the policy
-  `Connectivity/DisableCrossDeviceResume` (`HKLM\SOFTWARE\Microsoft\PolicyManager\default\Connectivity\DisableCrossDeviceResume`,
-  `value`) with `reg.exe`; where an MDM sets the policy, the tab doesn't offer Resume.
+  the signed-in user. Turning off Resume sets the policy `Connectivity/DisableCrossDeviceResume` to `1` with
+  `reg.exe`, both its current value (`HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\Connectivity`,
+  `DisableCrossDeviceResume`) and its default (`...\PolicyManager\default\Connectivity\DisableCrossDeviceResume`,
+  `value`); **Turn on** sets both to `0`.
 - **Network.** Requests go through WinHTTP with the PC's proxy settings and Windows' certificate store.
 - **Updates.** Each release is built from this repository's code by GitHub Actions. The app installs a new
   version only after checking it against the SHA-256 digest GitHub publishes for the download.

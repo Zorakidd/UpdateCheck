@@ -136,6 +136,17 @@ pub fn downloads_dir() -> Option<PathBuf> {
     found.or_else(|| std::env::var_os("USERPROFILE").map(|profile| PathBuf::from(profile).join("Downloads")))
 }
 
+/// How long ago Microsoft Defender last updated its protection, from the registry, which anyone may read.
+pub fn defender_updated_ago() -> Option<std::time::Duration> {
+    let key = r"SOFTWARE\Microsoft\Windows Defender\Signature Updates";
+    let bytes = reg_binary(Hive::LocalMachine, key, "SignaturesLastUpdated")?;
+    let ticks = u64::from_le_bytes(bytes.get(..8)?.try_into().ok()?);
+    // A FILETIME counts 100 nanoseconds since 1601.
+    let since_1970 = std::time::Duration::from_nanos(ticks.checked_sub(116_444_736_000_000_000)?.checked_mul(100)?);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(now.saturating_sub(since_1970))
+}
+
 pub fn powershell() -> PathBuf {
     system32(r"WindowsPowerShell\v1.0\powershell.exe")
 }

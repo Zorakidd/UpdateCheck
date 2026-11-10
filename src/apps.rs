@@ -280,31 +280,34 @@ const RESUME_NOTE: &str = "Continues on this PC what you had open on your phone.
                            turned off for everyone on this PC instead of removed.";
 const RESUME_EXE: &str = "CrossDeviceResume.exe";
 /// The policy that keeps Windows from starting CrossDeviceResume.exe, as the manifest of the package it is part
-/// of names it (Connectivity/DisableCrossDeviceResume). Its default here applies unless an organization sets
-/// it. Only administrators can change it: the access list grants it to whoever is signed in at the PC too, but
-/// only under a condition that a standard sign-in on Windows 11 Pro doesn't meet.
+/// of names it (Connectivity/DisableCrossDeviceResume). Its definition here, with its default, shows that this
+/// version of Windows has it. Setting only the default to 1 doesn't stop Windows from starting Resume at the
+/// next sign-in, so the app sets the policy's current value as well, the one an MDM would set.
 const RESUME_POLICY: &str = r"SOFTWARE\Microsoft\PolicyManager\default\Connectivity\DisableCrossDeviceResume";
-/// Where an organization's setting for the policy goes, which then decides.
-const RESUME_MANAGED: &str = r"SOFTWARE\Microsoft\PolicyManager\current\device\Connectivity";
+/// The policy's current value, `DisableCrossDeviceResume`, which decides. Only administrators can write either key.
+const RESUME_CURRENT: &str = r"SOFTWARE\Microsoft\PolicyManager\current\device\Connectivity";
+const RESUME_VALUE: &str = "DisableCrossDeviceResume";
 /// The switch for it in Settings, which on its own leaves CrossDeviceResume.exe running.
 const RESUME_SETTING: &str = r"Software\Microsoft\Windows\CurrentVersion\CrossDeviceResume\Configuration";
 
-/// Whether Resume is on: none where Windows doesn't have it, or where an organization decides.
+/// Whether Resume is on: none where Windows doesn't have it.
 fn resume_on() -> Option<bool> {
     let exe = system::windows_dir().join(r"SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy").join(RESUME_EXE);
-    if !exe.exists() || system::reg_dword(Hive::LocalMachine, RESUME_MANAGED, "DisableCrossDeviceResume").is_some() {
+    if !exe.exists() || !system::reg_key_exists(Hive::LocalMachine, RESUME_POLICY) {
         return None;
     }
-    Some(system::reg_dword(Hive::LocalMachine, RESUME_POLICY, "value")? != 1)
+    Some(system::reg_dword(Hive::LocalMachine, RESUME_CURRENT, RESUME_VALUE) != Some(1))
 }
 
 /// Turns Resume on or off for the PC, and the switch in Settings with it. Windows asks for administrator rights
 /// unless the app already has them; [`declined`] tells whether the user said no.
 pub fn set_resume(on: bool) -> io::Result<()> {
     let data = u32::from(!on);
-    match system::set_reg_dword(Hive::LocalMachine, RESUME_POLICY, "value", data) {
-        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => set_resume_policy_as_admin(data)?,
-        result => result?,
+    // Writing straight away works only when the app runs as administrator, and only once the key exists.
+    let direct = system::set_reg_dword(Hive::LocalMachine, RESUME_CURRENT, RESUME_VALUE, data)
+        .and_then(|()| system::set_reg_dword(Hive::LocalMachine, RESUME_POLICY, "value", data));
+    if direct.is_err() {
+        set_resume_policy_as_admin(data)?;
     }
     // Settings only has the switch once Resume has started for this account; the policy is what counts.
     if system::reg_key_exists(Hive::CurrentUser, RESUME_SETTING)
@@ -315,10 +318,13 @@ pub fn set_resume(on: bool) -> io::Result<()> {
     Ok(())
 }
 
-/// Sets the policy with reg.exe as administrator, without a window.
+/// Sets the policy's current value and its default with reg.exe as administrator, without a window, so Windows
+/// asks only once.
 fn set_resume_policy_as_admin(data: u32) -> io::Result<()> {
-    let parameters = format!(r#"add "HKLM\{RESUME_POLICY}" /v value /t REG_DWORD /d {data} /f /reg:64"#);
-    match system::run_elevated(&system::system32("reg.exe"), &parameters, Duration::from_secs(30)) {
+    // Neither key has a space in it, so cmd.exe needs no quotes.
+    let add = |key: &str, value: &str| format!(r"reg add HKLM\{key} /v {value} /t REG_DWORD /d {data} /f /reg:64");
+    let parameters = format!("/c {} && {}", add(RESUME_CURRENT, RESUME_VALUE), add(RESUME_POLICY, "value"));
+    match system::run_elevated(&system::system32("cmd.exe"), &parameters, Duration::from_secs(30)) {
         Ok(Some(0)) => Ok(()),
         Ok(Some(code)) => Err(io::Error::other(format!("reg.exe ended with exit code {code}"))),
         Ok(None) => Err(io::Error::other("reg.exe didn't finish within 30 seconds")),
