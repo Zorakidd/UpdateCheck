@@ -24,6 +24,14 @@ const FOCUS_RESCAN: Duration = Duration::from_secs(60);
 const INSTALLED_APPS: &str = "ms-settings:appsfeatures";
 const IGNORE_HINT: &str = "Keep this app: the tab no longer offers it, and nothing counts it. It is listed at the end, to show again.";
 
+/// What a button in the summary at the top ticks.
+#[derive(Clone, Copy)]
+enum Selection {
+    All,
+    Recommended,
+    Nothing,
+}
+
 #[derive(Default)]
 pub(super) struct AppsPage {
     scan: Option<Result<Scan, String>>,
@@ -203,19 +211,24 @@ impl App {
                     ui::text(ui, "Looking for apps\u{2026}", ui::bold(15.0), p.text);
                 }
                 (Some(scan), _) => {
-                    // One button that selects the recommended apps, or clears what is selected.
-                    let (label, everything) = if self.apps.selected.is_empty() {
-                        ("Select recommended", true)
-                    } else {
-                        ("Clear selection", false)
-                    };
-                    let has_button = !everything || !recommended.is_empty();
+                    // Select all, while not every app is, and one button that selects the recommended apps or
+                    // clears what is selected.
+                    let mut buttons = Vec::new();
+                    if !scan.apps.iter().all(|app| self.apps.selected.contains(&app.package)) {
+                        buttons.push(("Select all", Selection::All));
+                    }
+                    if !self.apps.selected.is_empty() {
+                        buttons.push(("Clear selection", Selection::Nothing));
+                    } else if !recommended.is_empty() && recommended.len() < scan.apps.len() {
+                        // With every app recommended, Select all selects the same.
+                        buttons.push(("Select recommended", Selection::Recommended));
+                    }
                     let breakdown = scan.breakdown();
-                    if has_button {
-                        let row = super::button_row(ui, Id::unique("select"), &scan.summary(), &breakdown, label, Look::Secondary, true);
-                        if row.clicked() {
-                            select = Some(everything);
-                        }
+                    if !buttons.is_empty() {
+                        let looks: Vec<_> = buttons.iter().map(|&(label, _)| (label, Look::Secondary)).collect();
+                        let responses = super::buttons_row(ui, Id::unique("select"), &scan.summary(), &breakdown, &looks, true);
+                        let clicked = responses.iter().position(|response| response.clicked());
+                        select = clicked.map(|index| buttons[index].1);
                     } else {
                         ui::text(ui, scan.summary(), ui::bold(14.0), p.text);
                         if !breakdown.is_empty() {
@@ -239,10 +252,11 @@ impl App {
         if open_log {
             self.actions.push(Action::OpenUrl(apps::log_path().display().to_string()));
         }
-        match select {
-            Some(true) => self.apps.selected.extend(recommended),
-            Some(false) => self.apps.selected.clear(),
-            None => {}
+        match (select, &offered) {
+            (Some(Selection::All), Some(scan)) => self.apps.selected.extend(scan.apps.iter().map(|app| app.package.clone())),
+            (Some(Selection::Recommended), _) => self.apps.selected.extend(recommended),
+            (Some(Selection::Nothing), _) => self.apps.selected.clear(),
+            _ => {}
         }
 
         let Some(scan) = offered else { return };

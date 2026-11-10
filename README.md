@@ -23,7 +23,7 @@ so you see at a glance which steps matter this week.
 - **A checklist for the week.** Tick off each step as you go. **Open** takes you straight to the right
   settings page or app. The list starts fresh every week on the day you choose.
 - **Shows what's waiting.** Windows Update, optional driver updates and your desktop apps say how many
-  updates are queued, for example "2 upgrades waiting", and Desktop apps ticks itself off when there are none.
+  updates are queued, for example "2 upgrades waiting", and each step ticks itself off when there are none.
 - **Graphics drivers.** Lists your NVIDIA, AMD or Intel graphics with the installed driver, tells you when
   NVIDIA has a newer one, and opens NVIDIA App, AMD Software or Intel Graphics Software for you.
 - **Removes apps you never use.** Preinstalled apps such as Solitaire, the MSN apps or Clipchamp, removed
@@ -55,18 +55,18 @@ so you see at a glance which steps matter this week.
   says when you last did it if it has been a while.
 - **Settings** has the reminder day and time, light and dark mode, and lets you add, remove and reorder
   steps. A removed step comes back with **Undo** or Ctrl+Z.
-- The Windows Update step also says when Windows last installed updates. Driver updates include firmware,
-  which on many brand PCs means the BIOS. If Windows gives no clear answer, a step says nothing rather than
-  guess.
+- The Windows Update step also says when Windows last installed updates, and stays open while Windows waits
+  for a restart to finish installing them. Driver updates include firmware, which on many brand PCs means
+  the BIOS. If Windows gives no clear answer, a step says nothing rather than guess.
 - **Free up space** says how much room is left on the drive Windows is on, and stands out below 20 GB, about
   what Windows needs to install a new version of itself.
 - The counts are looked up again when you come back to the window after installing something.
 
 ### Apps
 
-- The **Apps** tab lists the apps that came with Windows or the PC and that hardly anyone uses, with the
-  ones worth removing already ticked. Calculator, Photos, Notepad and everything Windows needs are never
-  offered.
+- The **Apps** tab lists the apps that came with Windows or the PC and that hardly anyone uses, the ones
+  worth removing first. **Select recommended** ticks those, **Select all** every app on the tab. Calculator,
+  Photos, Notepad and everything Windows needs are never offered.
 - **Remove selected** asks first, then removes the ticked apps for your account only. The Microsoft Store
   has every one of them if you want one back.
 - Microsoft Edge (where Windows allows it, in the European Economic Area), OneDrive and trial software can only be removed in Windows'

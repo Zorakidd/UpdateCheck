@@ -1070,7 +1070,8 @@ fn schedule_text(settings: &state::Settings, on: bool) -> String {
 pub fn windows_update_text(status: Status, restart: bool) -> String {
     let mut text = match status {
         Status::Checking => "Asking Windows Update\u{2026}".to_owned(),
-        Status::NothingPending => "Up to date".to_owned(),
+        // The restart is said below, from `restart`, which the tab reads afresh on each visit.
+        Status::NothingPending | Status::RestartPending => "Up to date".to_owned(),
         Status::Pending(count) => pending::describe(pending::WINDOWS_UPDATE, count),
         Status::CheckFailed => "Couldn't ask Windows Update".to_owned(),
     };
@@ -1128,15 +1129,25 @@ fn dialog_text(dialog: &Dialog, settings: &state::Settings) -> DialogText {
 /// A title and a line under it on the left, and a button on the right, centered on each other. Returns the
 /// button's response.
 fn button_row(ui: &mut Ui, id: Id, title: &str, text: &str, button: &str, look: Look, enabled: bool) -> egui::Response {
+    let mut responses = buttons_row(ui, id, title, text, &[(button, look)], enabled);
+    responses.remove(0)
+}
+
+/// Like `button_row`, with several buttons side by side on the right, in the order given. Returns their
+/// responses in that order.
+fn buttons_row(ui: &mut Ui, id: Id, title: &str, text: &str, buttons: &[(&str, Look)], enabled: bool) -> Vec<egui::Response> {
+    const GAP: f32 = 8.0;
     let p = ui::palette(ui.ctx());
     let width = ui.available_width();
-    let size = ui::button_size(ui, button, look);
-    let text_width = (width - size.x - 16.0).max(80.0);
+    let sizes: Vec<_> = buttons.iter().map(|&(label, look)| ui::button_size(ui, label, look)).collect();
+    let buttons_width = sizes.iter().map(|size| size.x).sum::<f32>() + GAP * sizes.len().saturating_sub(1) as f32;
+    let buttons_height = sizes.iter().map(|size| size.y).fold(0.0, f32::max);
+    let text_width = (width - buttons_width - 16.0).max(80.0);
     let painter = ui.painter().clone();
     let title = painter.layout(title.to_owned(), ui::bold(14.0), p.text, text_width);
     let text = (!text.is_empty()).then(|| painter.layout(text.to_owned(), ui::regular(12.0), p.muted, text_width));
     let text_height = title.size().y + text.as_ref().map_or(0.0, |text| 2.0 + text.size().y);
-    let height = text_height.max(size.y);
+    let height = text_height.max(buttons_height);
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let mut y = rect.center().y - text_height / 2.0;
     let title_height = title.size().y;
@@ -1145,8 +1156,16 @@ fn button_row(ui: &mut Ui, id: Id, title: &str, text: &str, button: &str, look: 
     if let Some(text) = text {
         painter.galley(pos2(rect.left(), y), text, p.muted);
     }
-    let place = Rect::from_min_size(pos2(rect.right() - size.x, rect.center().y - size.y / 2.0), size);
-    ui::button_at(ui, place, id, button, look, enabled)
+    let mut left = rect.right() - buttons_width;
+    let mut responses = Vec::with_capacity(buttons.len());
+    for (index, (&(label, look), size)) in buttons.iter().zip(sizes).enumerate() {
+        let place = Rect::from_min_size(pos2(left, rect.center().y - size.y / 2.0), size);
+        // The first button keeps the row's own id, so a row with one button behaves as it always has.
+        let button_id = if index == 0 { id } else { id.with(index) };
+        responses.push(ui::button_at(ui, place, button_id, label, look, enabled));
+        left += size.x + GAP;
+    }
+    responses
 }
 
 #[cfg(test)]
@@ -1199,6 +1218,7 @@ mod tests {
     #[test]
     fn windows_update_says_what_is_waiting_and_whether_to_restart() {
         assert_eq!(windows_update_text(Status::NothingPending, false), "Up to date");
+        assert_eq!(windows_update_text(Status::RestartPending, true), "Up to date\nRestart to finish installing updates");
         assert_eq!(windows_update_text(Status::Pending(1), false), "1 update waiting");
         assert_eq!(
             windows_update_text(Status::Pending(3), true),

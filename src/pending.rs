@@ -13,8 +13,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{Local, NaiveDate, TimeZone, Utc};
 
-use crate::applog;
-use crate::system;
+use crate::{applog, pcinfo, system};
 
 pub const WINDOWS_UPDATE: &str = "windows-update";
 pub const DRIVERS: &str = "drivers";
@@ -36,6 +35,8 @@ pub enum Status {
     Checking,
     NothingPending,
     Pending(usize),
+    /// Nothing waiting to be installed, but Windows waits for a restart to finish installing updates.
+    RestartPending,
     CheckFailed,
 }
 
@@ -47,11 +48,13 @@ pub struct Found {
     pub last_installed: Option<NaiveDate>,
     /// What is waiting, such as "Mozilla Firefox 145.0.1 → 146.0", if the lookup can name it.
     pub items: Vec<String>,
+    /// Whether Windows waits for a restart to finish installing updates, which only Windows Update tells.
+    pub restart: bool,
 }
 
 impl Found {
     pub fn count(count: usize) -> Self {
-        Found { count, last_installed: None, items: Vec::new() }
+        Found { count, last_installed: None, items: Vec::new(), restart: false }
     }
 }
 
@@ -225,7 +228,7 @@ pub fn winget_upgrades() -> Result<Option<Found>, String> {
         if items.len() != count {
             items.clear();
         }
-        Found { count, last_installed: None, items }
+        Found { items, ..Found::count(count) }
     }))
 }
 
@@ -391,7 +394,13 @@ pub fn standard_lookups(search: Arc<SharedSearch>) -> HashMap<&'static str, Look
     lookups.insert(
         WINDOWS_UPDATE,
         Arc::new(move || {
-            Ok(shared.get().map(|found| Found { last_installed: found.last_installed, ..Found::count(found.software) }))
+            // Whether a restart is pending is asked each time: it takes microseconds, and a restart may have
+            // become due since the search.
+            Ok(shared.get().map(|found| Found {
+                last_installed: found.last_installed,
+                restart: pcinfo::restart_pending(),
+                ..Found::count(found.software)
+            }))
         }),
     );
     lookups.insert(DRIVERS, Arc::new(move || Ok(search.get().map(|found| Found::count(found.drivers)))));
@@ -514,8 +523,9 @@ impl PendingChecks {
         match self.results.get(step_id) {
             None => Status::Checking,
             Some(Lookup::Failed | Lookup::Found(None)) => Status::CheckFailed,
-            Some(Lookup::Found(Some(found))) if found.count == 0 => Status::NothingPending,
-            Some(Lookup::Found(Some(found))) => Status::Pending(found.count),
+            Some(Lookup::Found(Some(found))) if found.count > 0 => Status::Pending(found.count),
+            Some(Lookup::Found(Some(found))) if found.restart => Status::RestartPending,
+            Some(Lookup::Found(Some(_))) => Status::NothingPending,
         }
     }
 
@@ -754,6 +764,19 @@ Spotify   9NCBCSZSJRSB      1.2.40    1.2.45    msstore\n\
         wait_for(&mut checks);
         assert_eq!(checks.status(WINDOWS_UPDATE), Status::Pending(2));
         assert_eq!(checks.last_installed(WINDOWS_UPDATE), Some(date(2026, 11, 3)));
+    }
+
+    #[test]
+    fn a_restart_still_to_make_is_waiting_too() {
+        let mut restart_only = checks(WINDOWS_UPDATE, || Ok(Some(Found { restart: true, ..Found::count(0) })));
+        restart_only.refresh([WINDOWS_UPDATE], false);
+        wait_for(&mut restart_only);
+        assert_eq!(restart_only.status(WINDOWS_UPDATE), Status::RestartPending);
+        // Updates still to install say more than the restart, which they will likely ask for again.
+        let mut with_updates = checks(WINDOWS_UPDATE, || Ok(Some(Found { restart: true, ..Found::count(2) })));
+        with_updates.refresh([WINDOWS_UPDATE], false);
+        wait_for(&mut with_updates);
+        assert_eq!(with_updates.status(WINDOWS_UPDATE), Status::Pending(2));
     }
 
     #[test]

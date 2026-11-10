@@ -29,8 +29,9 @@ const GAP: f32 = 10.0;
 const LOW_SPACE: u64 = 20 * 1024 * 1024 * 1024;
 /// How many of the upgrades waiting a card names before it only counts the rest.
 const ITEMS_SHOWN: usize = 5;
-/// The steps that tick themselves off once their lookup finds nothing waiting.
-const TICKED_WHEN_NOTHING_WAITS: &[&str] = &[state::WINGET_STEP];
+/// The steps that tick themselves off once their lookup finds nothing waiting. For Windows Update that includes
+/// no restart still to make.
+const TICKED_WHEN_NOTHING_WAITS: &[&str] = &[state::WINDOWS_UPDATE_STEP, state::DRIVERS_STEP, state::WINGET_STEP];
 
 /// How a part of a card's line under its title reads: as a plain fact, as something to do, or as good news.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -188,6 +189,7 @@ impl App {
                 Status::Checking => parts.push(("checking\u{2026}".to_owned(), Tone::Plain)),
                 Status::Pending(count) => parts.push((pending::describe(id, count), Tone::ToDo)),
                 Status::NothingPending => parts.push(("nothing waiting".to_owned(), Tone::Good)),
+                Status::RestartPending => parts.push(("restart to finish installing".to_owned(), Tone::ToDo)),
                 // Nothing to say that would help; the step is there to be looked into by hand anyway.
                 Status::CheckFailed => {}
             }
@@ -376,15 +378,21 @@ mod tests {
     }
 
     #[test]
-    fn desktop_apps_tick_themselves_off_when_winget_has_nothing() {
+    fn steps_tick_themselves_off_when_their_lookup_finds_nothing() {
         let mut state = State { cycle_start: NaiveDate::from_ymd_opt(2026, 11, 9), ..State::default() };
         let mut unticked = BTreeSet::new();
-        let nothing = |_: &str| Status::NothingPending;
-        assert_eq!(steps_to_tick(&state, &unticked, nothing), [state::WINGET_STEP]);
-        // Only a lookup that found nothing ticks it, not one that found upgrades, failed or is still running.
-        for status in [Status::Pending(2), Status::CheckFailed, Status::Checking] {
+        assert_eq!(
+            steps_to_tick(&state, &unticked, |_| Status::NothingPending),
+            [state::WINDOWS_UPDATE_STEP, state::DRIVERS_STEP, state::WINGET_STEP]
+        );
+        // Only a lookup that found nothing ticks a step, not one that found something waiting or a restart still
+        // to make, or that failed or is still running.
+        for status in [Status::Pending(2), Status::RestartPending, Status::CheckFailed, Status::Checking] {
             assert!(steps_to_tick(&state, &unticked, |_| status).is_empty());
         }
+        // From here on, only winget finds nothing.
+        let nothing = |id: &str| if id == state::WINGET_STEP { Status::NothingPending } else { Status::Pending(1) };
+        assert_eq!(steps_to_tick(&state, &unticked, nothing), [state::WINGET_STEP]);
         // Unticked by hand, it stays unticked that week, and ticks itself off again the next.
         unticked.insert((state.cycle_start, state::WINGET_STEP.to_owned()));
         assert!(steps_to_tick(&state, &unticked, nothing).is_empty());
