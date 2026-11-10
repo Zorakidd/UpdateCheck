@@ -126,6 +126,16 @@ pub fn system32(name: &str) -> PathBuf {
     windows_dir().join("System32").join(name)
 }
 
+/// The user's Downloads folder, wherever it was moved to.
+pub fn downloads_dir() -> Option<PathBuf> {
+    use windows_sys::Win32::UI::Shell::{FOLDERID_Downloads, SHGetKnownFolderPath};
+    let mut path: *mut u16 = std::ptr::null_mut();
+    let result = unsafe { SHGetKnownFolderPath(&FOLDERID_Downloads, 0, std::ptr::null_mut(), &mut path) };
+    let found = (result == 0 && !path.is_null()).then(|| PathBuf::from(unsafe { from_wide_pointer(path) }));
+    unsafe { windows_sys::Win32::System::Com::CoTaskMemFree(path.cast()) };
+    found.or_else(|| std::env::var_os("USERPROFILE").map(|profile| PathBuf::from(profile).join("Downloads")))
+}
+
 pub fn powershell() -> PathBuf {
     system32(r"WindowsPowerShell\v1.0\powershell.exe")
 }

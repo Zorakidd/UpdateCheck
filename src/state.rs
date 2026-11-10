@@ -382,13 +382,47 @@ pub fn parse_time(text: &str) -> Option<Now> {
     })
 }
 
-/// Where the checklist is kept: `%APPDATA%\UpdateCheck\state.json`, or the file `UPDATE_CHECK_DATA` names.
+/// Where the checklist is kept: `UpdateCheck\state.json` in the Downloads folder, or the file
+/// `UPDATE_CHECK_DATA` names. The logs go beside it.
 pub fn data_file() -> PathBuf {
     if let Some(path) = std::env::var_os("UPDATE_CHECK_DATA").filter(|path| !path.is_empty()) {
         return PathBuf::from(path);
     }
-    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    base.join("UpdateCheck").join("state.json")
+    static DEFAULT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DEFAULT
+        .get_or_init(|| {
+            let folder = crate::system::downloads_dir().unwrap_or_else(|| PathBuf::from(".")).join("UpdateCheck");
+            // Earlier versions kept it in %APPDATA%\UpdateCheck. Tests leave that folder alone.
+            if !cfg!(test)
+                && let Some(appdata) = std::env::var_os("APPDATA")
+            {
+                move_folder(&PathBuf::from(appdata).join("UpdateCheck"), &folder);
+            }
+            folder.join("state.json")
+        })
+        .clone()
+}
+
+/// Moves the old data folder to the new place, once: only while the new one doesn't exist yet. The old one is
+/// deleted only when every file in it was copied.
+fn move_folder(old: &std::path::Path, new: &std::path::Path) {
+    if new.exists() || !old.is_dir() || std::fs::rename(old, new).is_ok() {
+        return;
+    }
+    // A rename can't reach another drive, and fails while another copy of the app has a file open.
+    let Ok(entries) = std::fs::read_dir(old) else { return };
+    if std::fs::create_dir_all(new).is_err() {
+        return;
+    }
+    let mut copied = true;
+    for entry in entries.flatten() {
+        if entry.path().is_file() {
+            copied &= std::fs::copy(entry.path(), new.join(entry.file_name())).is_ok();
+        }
+    }
+    if copied {
+        let _ = std::fs::remove_dir_all(old);
+    }
 }
 
 /// The checklist saved at `path`, or the default one if there is none. A file that can't be read as a

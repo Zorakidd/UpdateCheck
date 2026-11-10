@@ -115,12 +115,12 @@ back, and Ctrl+Z undoes removing a step.
 - No account, no ads, no telemetry.
 - The app itself contacts only GitHub, at most once a day to look for its own updates, and NVIDIA's driver
   search if your PC has NVIDIA graphics. winget and Windows Update reach their own servers as usual.
-- Your checklist and the logs stay on your PC, in `%APPDATA%\UpdateCheck`.
+- Your checklist and the logs stay on your PC, in the folder `UpdateCheck` in your Downloads folder.
 
 ## Uninstall
 
 Turn off the **Automatic reminder** switch at the bottom of the window, which removes Update Check from
-Windows startup. Then delete `UpdateCheck.exe` and the folder `%APPDATA%\UpdateCheck`.
+Windows startup. Then delete `UpdateCheck.exe` and the folder `UpdateCheck` in your Downloads folder.
 
 ## For IT
 
@@ -138,9 +138,10 @@ Windows startup. Then delete `UpdateCheck.exe` and the folder `%APPDATA%\UpdateC
 - **Network.** Requests go through WinHTTP with the PC's proxy settings and Windows' certificate store.
 - **Updates.** Each release is built from this repository's code by GitHub Actions. The app installs a new
   version only after checking it against the SHA-256 digest GitHub publishes for the download.
-- **Files.** `%APPDATA%\UpdateCheck` holds `state.json` (the checklist), `update-check.log` (warnings and
-  errors) and `removed-apps.log` (what the Apps tab removed). The logs are kept to about 1 MB and 256 KB,
-  with the previous log beside each as `.log.1`.
+- **Files.** `UpdateCheck` in the user's Downloads folder (the known folder, wherever it was moved) holds
+  `state.json` (the checklist), `update-check.log` (warnings and errors) and `removed-apps.log` (what the
+  Apps tab removed). The logs are kept to about 1 MB and 256 KB, with the previous log beside each as
+  `.log.1`. Versions before this one used `%APPDATA%\UpdateCheck`; its contents move over on the first start.
 
 ## Build it yourself
 
