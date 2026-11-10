@@ -62,7 +62,8 @@ so you see at a glance which steps matter this week.
   the BIOS. If Windows gives no clear answer, a step says nothing rather than guess.
 - **Free up space** says how much room is left on the drive Windows is on, and stands out below 20 GB, about
   what Windows needs to install a new version of itself.
-- The counts are looked up again when you come back to the window after installing something.
+- The counts are looked up again when you come back to the window after installing something. Desktop
+  apps counts again as soon as winget is through, even while its window stays open.
 
 ### Apps
 

@@ -85,8 +85,18 @@ pub fn open_window(state: State, path: PathBuf, reminder: bool) -> Result<(), St
     // would cost a laptop's battery for nothing.
     let mut setup = egui_wgpu::WgpuSetupCreateNew::without_display_handle();
     setup.power_preference = wgpu::PowerPreference::from_env().unwrap_or(wgpu::PowerPreference::LowPower);
-    let wgpu_options =
-        egui_wgpu::WgpuConfiguration { wgpu_setup: egui_wgpu::WgpuSetup::CreateNew(setup), ..Default::default() };
+    // Windows reports every step of dragging the window, and egui draws the window again for each. Waiting for
+    // the screen's next refresh before each step held the window back from the mouse; Mailbox shows a frame at
+    // the next refresh without waiting for it, and doesn't tear. Direct3D 12 always offers it.
+    let surface = egui_wgpu::SurfaceConfig {
+        present_mode: wgpu::PresentMode::Mailbox,
+        desired_maximum_frame_latency: Some(1),
+    };
+    let wgpu_options = egui_wgpu::WgpuConfiguration {
+        surface,
+        wgpu_setup: egui_wgpu::WgpuSetup::CreateNew(setup),
+        ..Default::default()
+    };
     let options = eframe::NativeOptions {
         viewport,
         centered: position.is_none(),
@@ -250,6 +260,15 @@ enum Action {
     AskRemoveApps(Vec<apps::App>),
 }
 
+/// A console a step's Open button started, such as the one running `winget upgrade --all`.
+struct Console {
+    step: String,
+    process: Child,
+    /// Whether the console has run a program, such as winget, since the step was last looked up again.
+    busy: bool,
+    rechecked: bool,
+}
+
 /// A step whose Open button handed over to another program, such as Settings for Windows Update. What it had
 /// waiting may be installed by the time the window gets the focus back, so it is looked into again then.
 struct Stale {
@@ -283,8 +302,8 @@ pub struct App {
     /// Whether each vendor's graphics app is installed, found out once until the window gets the focus back.
     vendor_apps: BTreeMap<Vendor, Option<VendorApp>>,
     stale: Vec<Stale>,
-    /// The consoles Open buttons started, such as winget's, by step.
-    consoles: Vec<(String, Child)>,
+    /// The consoles Open buttons started, such as winget's.
+    consoles: Vec<Console>,
     consoles_checked: Instant,
     dialogs: VecDeque<Dialog>,
     dialog_focus_pending: bool,
@@ -452,15 +471,21 @@ impl App {
             return;
         }
         self.consoles_checked = Instant::now();
-        let mut closed = Vec::new();
-        self.consoles.retain_mut(|(id, console)| match console.try_wait() {
-            Ok(None) => true,
-            Ok(Some(_)) | Err(_) => {
-                closed.push(id.clone());
-                false
+        let mut done = Vec::new();
+        self.consoles.retain_mut(|console| {
+            let open = matches!(console.process.try_wait(), Ok(None));
+            // cmd.exe keeps the window open once the command is through, so the step is looked up again as soon
+            // as the command ends, such as `winget upgrade --all`, and once more on closing if it hadn't ended.
+            if open && system::runs_a_program(console.process.id()) {
+                console.busy = true;
+            } else if console.busy || (!open && !console.rechecked) {
+                console.busy = false;
+                console.rechecked = true;
+                done.push(console.step.clone());
             }
+            open
         });
-        for id in closed {
+        for id in done {
             self.recheck_step(&id);
         }
     }
@@ -564,7 +589,7 @@ impl App {
         }
         match system::open_action(&action) {
             Ok(Some(console)) => {
-                self.consoles.push((id.to_owned(), console));
+                self.consoles.push(Console { step: id.to_owned(), process: console, busy: false, rechecked: false });
                 self.consoles_checked = Instant::now();
             }
             Ok(None) => self.mark_stale(id),

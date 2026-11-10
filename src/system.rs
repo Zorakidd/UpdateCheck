@@ -136,6 +136,33 @@ pub fn downloads_dir() -> Option<PathBuf> {
     found.or_else(|| std::env::var_os("USERPROFILE").map(|profile| PathBuf::from(profile).join("Downloads")))
 }
 
+/// Whether a process is running a program it started, leaving out the host of its console window: for a
+/// console Update Check opened, whether the command typed or given to it is still going.
+pub fn runs_a_program(process_id: u32) -> bool {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+    };
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return false;
+    }
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
+    let mut found = false;
+    let mut more = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
+    while more && !found {
+        if entry.th32ParentProcessID == process_id {
+            let name = &entry.szExeFile;
+            let name = String::from_utf16_lossy(&name[..name.iter().position(|&c| c == 0).unwrap_or(name.len())]);
+            found = !["conhost.exe", "OpenConsole.exe"].iter().any(|host| name.eq_ignore_ascii_case(host));
+        }
+        more = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
+    }
+    unsafe { CloseHandle(snapshot) };
+    found
+}
+
 /// How long ago Microsoft Defender last updated its protection, from the registry, which anyone may read.
 pub fn defender_updated_ago() -> Option<std::time::Duration> {
     let key = r"SOFTWARE\Microsoft\Windows Defender\Signature Updates";
@@ -790,6 +817,19 @@ pub fn window_height(designed: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_console_runs_a_program_until_its_command_ends() {
+        let mut console = Command::new(system32("cmd.exe"))
+            .raw_arg(format!(r#"/c "{}" -n 3 127.0.0.1 >nul"#, system32("ping.exe").display()))
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        let running = runs_a_program(console.id());
+        console.wait().unwrap();
+        assert!(running, "cmd.exe ran ping.exe");
+    }
 
     #[test]
     fn sizes_read_like_explorer() {
