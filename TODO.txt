@@ -31,3 +31,6 @@ Stand 08.11.2026, auf dem Branch rust-rewrite (lokal committet, nicht gepusht):
 
 - [x] Release: Jeder Push auf main, der die App ändert, wird von GitHub Actions getestet, gebaut und als Release
   veröffentlicht. Die Version zählt sich selbst hoch, die Patch-Version ist die Zahl der Commits.
+
+- Build in a  ipconfig/flushdns and more tools
+ 
