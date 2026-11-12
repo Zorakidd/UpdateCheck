@@ -95,6 +95,8 @@ so you see at a glance which steps matter this week.
 
 These tools are at the end of **Settings**. They ask for administrator rights.
 
+- **Clear DNS cache** forgets the website addresses Windows remembered, for when a site won't load or opens
+  the wrong page. It is harmless: the next visit to a site looks its address up again.
 - **Check system files** runs System File Checker (`sfc /scannow`). **Repair Windows** first repairs
   Windows' own copy of its files with DISM, then checks the system files.
 - **Reset a USB drive** erases a USB stick or memory card and sets it up as one empty drive, for when it
@@ -131,7 +133,7 @@ Windows startup. Then delete `UpdateCheck.exe` and the folder `UpdateCheck` in y
   Policy Preferences, an Intune script or any other way of setting a registry value, to roll out new
   versions yourself. The app then never contacts GitHub, and Settings says that your organization keeps it
   up to date.
-- **Rights.** Nothing needs administrator rights except Check system files, Repair Windows, Reset a USB
+- **Rights.** Nothing needs administrator rights except Check system files, Repair Windows, Clear DNS cache, Reset a USB
   drive and turning Resume off or on, which ask through UAC. The reminder is a per-user sign-in entry (`HKCU\...\Run`) and a per-user
   Task Scheduler task, `UpdateCheck (<user name>)`, both running `UpdateCheck.exe --check`, so several users
   on one PC each have their own. They are re-registered if the .exe moves. Apps are only ever removed for

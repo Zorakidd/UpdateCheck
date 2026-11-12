@@ -23,6 +23,8 @@ pub(super) struct SettingsPage {
     files_text: Option<String>,
     repair: Option<Task<Result<bool, String>>>,
     repair_text: Option<String>,
+    dns: Option<Task<Result<bool, String>>>,
+    dns_text: Option<String>,
 }
 
 impl SettingsPage {
@@ -39,12 +41,14 @@ impl SettingsPage {
             files_text: None,
             repair: None,
             repair_text: None,
+            dns: None,
+            dns_text: None,
         }
     }
 
     /// Whether a tool waits for administrator rights, during which no other one starts.
     fn tool_running(&self) -> bool {
-        self.files.is_some() || self.repair.is_some()
+        self.files.is_some() || self.repair.is_some() || self.dns.is_some()
     }
 }
 
@@ -91,6 +95,16 @@ impl App {
             match started_text(result) {
                 Ok(text) => self.settings.repair_text = Some(text),
                 Err(error) => self.message("Couldn't start the repair", error),
+            }
+        }
+        if let Some(result) = finished(&mut self.settings.dns) {
+            match result {
+                Some(Ok(true)) => self.settings.dns_text = Some("Cleared.".to_owned()),
+                Some(Ok(false)) => {
+                    self.settings.dns_text = Some("Nothing changed: Windows didn't get administrator rights.".to_owned());
+                }
+                Some(Err(error)) => self.message("Couldn't clear the DNS cache", error),
+                None => self.settings.dns_text = Some("It stopped unexpectedly. The log has the details.".to_owned()),
             }
         }
     }
@@ -329,6 +343,7 @@ impl App {
         let waiting = "Waiting for administrator permission\u{2026}";
         let mut check_files = false;
         let mut repair = false;
+        let mut dns = false;
         let mut usb = false;
         ui::card(p).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -348,6 +363,14 @@ impl App {
             ui.add_space(8.0);
             ui.separator();
             ui.add_space(8.0);
+            let text = "Forgets the website addresses Windows remembered. Helps when a site won't load or opens the \
+                        wrong page. Nothing else changes.";
+            let label = if page.dns.is_some() { "Waiting\u{2026}" } else { "Clear" };
+            dns = super::button_row(ui, Id::unique(("settings", "dns")), "Clear DNS cache", text, label, Look::Secondary, !running).clicked();
+            result_line(ui, if page.dns.is_some() { Some(waiting) } else { page.dns_text.as_deref() });
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
             let text = "Erases a USB stick or memory card and sets it up again, for when it acts up.";
             usb = super::button_row(ui, Id::unique(("settings", "usb")), "Reset a USB drive", text, "Open", Look::Secondary, true).clicked();
         });
@@ -358,6 +381,10 @@ impl App {
         if repair && !self.settings.tool_running() {
             self.settings.repair_text = None;
             self.settings.repair = Some(Task::spawn(&self.ctx, "repair", system::repair_windows));
+        }
+        if dns && !self.settings.tool_running() {
+            self.settings.dns_text = None;
+            self.settings.dns = Some(Task::spawn(&self.ctx, "clear dns", system::flush_dns));
         }
         if usb {
             self.actions.push(Action::Page(Page::Usb));

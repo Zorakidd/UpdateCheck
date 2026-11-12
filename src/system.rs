@@ -610,6 +610,17 @@ fn run_as_admin_console(script: &str) -> Result<bool, String> {
     }
 }
 
+/// Clear Windows' DNS cache, which takes administrator rights. Ok(false) if the user said no.
+pub fn flush_dns() -> Result<bool, String> {
+    match run_elevated(&system32("ipconfig.exe"), "/flushdns", Duration::from_secs(30)) {
+        Ok(Some(0)) => Ok(true),
+        Ok(Some(code)) => Err(format!("ipconfig stopped with code {code}.")),
+        Ok(None) => Err("Clearing the DNS cache took too long.".to_owned()),
+        Err(ERROR_CANCELLED) => Ok(false),
+        Err(code) => Err(error_text(code)),
+    }
+}
+
 /// Run a program as administrator without a window, and wait up to `timeout` for it to finish. Returns its
 /// exit code, or None if it was still running; `Err(ERROR_CANCELLED)` if the user said no.
 pub fn run_elevated(program: &Path, parameters: &str, timeout: Duration) -> Result<Option<u32>, u32> {
