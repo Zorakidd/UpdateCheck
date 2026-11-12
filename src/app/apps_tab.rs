@@ -46,8 +46,6 @@ pub(super) struct AppsPage {
     removal_at: Arc<AtomicUsize>,
     removal_names: Vec<String>,
     result: Option<String>,
-    /// Turning Resume on again, which may wait for the user to give administrator rights.
-    turning_on: Option<Task<std::io::Result<()>>>,
 }
 
 impl App {
@@ -109,18 +107,6 @@ impl App {
             });
             self.apps.selected.clear();
             self.apps.removal_names.clear();
-            self.start_scan();
-        }
-        if let Some(result) = finished(&mut self.apps.turning_on) {
-            match result {
-                Some(Ok(())) => {}
-                Some(Err(error)) if apps::declined(&error) => {}
-                Some(Err(error)) => {
-                    applog::warning("apps", format!("Couldn't turn on Resume: {error}"));
-                    self.message("Couldn't turn on Resume", format!("Windows couldn't turn it on: {error}"));
-                }
-                None => self.message("Couldn't turn on Resume", "Turning it on stopped unexpectedly."),
-            }
             self.start_scan();
         }
     }
@@ -322,19 +308,6 @@ impl App {
                 self.actions.push(Action::OpenForStep { target: INSTALLED_APPS.to_owned(), step: state::APPS_STEP });
             }
         }
-        let mut turn_on = false;
-        if scan.resume_off {
-            ui::section(ui, "Turned off", 18.0);
-            ui::text(ui, "Part of Windows, so turned off for everyone on this PC instead of removed.", ui::regular(12.0), p.muted);
-            ui.add_space(6.0);
-            ui::card(p).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                let text = "Windows starts it again at the next sign-in after you turn it on.";
-                let enabled = !removing && self.apps.turning_on.is_none();
-                turn_on = super::button_row(ui, Id::unique("turn-on-resume"), "Resume", text, "Turn on", Look::Secondary, enabled)
-                    .clicked();
-            });
-        }
         let mut show_again = None;
         if !ignored.is_empty() {
             ui::section(ui, "Ignored", 18.0);
@@ -357,16 +330,6 @@ impl App {
         }
         if let Some(key) = show_again {
             self.offer_again(&key);
-        }
-        if turn_on {
-            self.turn_on_resume();
-        }
-    }
-
-    /// Turns Resume on in the background, since Windows may first ask for administrator rights.
-    fn turn_on_resume(&mut self) {
-        if self.apps.turning_on.is_none() {
-            self.apps.turning_on = Some(Task::spawn(&self.ctx, "turning on Resume", || apps::set_resume(true)));
         }
     }
 
@@ -411,12 +374,7 @@ impl App {
             ("Nothing selected".to_owned(), "Tick the apps you don't use. Only your account loses them.")
         } else {
             let title = if count == 1 { "1 app selected".to_owned() } else { format!("{count} apps selected") };
-            // Resume is turned off for the whole PC instead.
-            let text = match (count, chosen.iter().any(apps::App::turns_off)) {
-                (1, true) => "Resume is turned off for everyone on this PC. You can turn it on again here.",
-                (_, true) => "Resume is turned off for everyone on this PC, the others removed for your account only.",
-                _ => "Only your account loses them, and the Microsoft Store has them if you want one back.",
-            };
+            let text = "Only your account loses them, and the Microsoft Store has them if you want one back.";
             (title, text)
         };
         let label = if count == 0 { "Remove selected".to_owned() } else { format!("Remove selected ({count})") };
