@@ -140,9 +140,10 @@ Windows startup. Then delete `UpdateCheck.exe` and the folder `UpdateCheck` in y
   the signed-in user. Turning off Resume sets the policy `Connectivity/DisableCrossDeviceResume` to `1` with
   `reg.exe`, both its current value (`HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\Connectivity`,
   `DisableCrossDeviceResume`) and its default (`...\PolicyManager\default\Connectivity\DisableCrossDeviceResume`,
-  `value`). The policy alone doesn't stop Windows from starting it, so it also sets a `Debugger` value under
-  `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\CrossDeviceResume.exe` that
-  ends at once. **Turn on** sets both policy values to `0` and deletes that `Debugger` value.
+  `value`). The policy alone doesn't stop Windows from starting it, so it also renames
+  `C:\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\CrossDeviceResume.exe` to
+  `CrossDeviceResume.exe.off`, after taking the file over from TrustedInstaller. **Turn on** sets both policy
+  values to `0` and renames the file back. A Windows update or `sfc /scannow` may restore the original file.
 - **Network.** Requests go through WinHTTP with the PC's proxy settings and Windows' certificate store.
 - **Updates.** Each release is built from this repository's code by GitHub Actions. The app installs a new
   version only after checking it against the SHA-256 digest GitHub publishes for the download.
