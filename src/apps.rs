@@ -288,9 +288,8 @@ const RESUME_POLICY: &str = r"SOFTWARE\Microsoft\PolicyManager\default\Connectiv
 const RESUME_CURRENT: &str = r"SOFTWARE\Microsoft\PolicyManager\current\device\Connectivity";
 const RESUME_VALUE: &str = "DisableCrossDeviceResume";
 /// Neither policy value stops Windows from starting CrossDeviceResume.exe at sign-in, and neither does Image File
-/// Execution Options, since Windows starts it as a package app. So the app renames the file, which keeps it from
-/// running at all. It carries this extension while Resume is turned off.
-const RESUME_OFF_EXT: &str = ".off";
+/// Execution Options, since Windows starts it as a package app. Renaming the file makes Windows complain at every
+/// sign-in. So the app puts a program that does nothing in its place, and keeps the original for Turn on.
 /// The folder of the package CrossDeviceResume.exe is part of, below the Windows folder.
 const RESUME_DIR: &str = r"SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy";
 /// The switch for it in Settings, which on its own leaves CrossDeviceResume.exe running.
@@ -298,8 +297,8 @@ const RESUME_SETTING: &str = r"Software\Microsoft\Windows\CurrentVersion\CrossDe
 
 /// Whether Resume is on: none where Windows doesn't have it.
 fn resume_on() -> Option<bool> {
-    let (exe, renamed) = resume_paths();
-    if renamed.exists() {
+    let (exe, _) = resume_paths();
+    if resume_is_stub(&exe) {
         return Some(false);
     }
     if !exe.exists() || !system::reg_key_exists(Hive::LocalMachine, RESUME_POLICY) {
@@ -327,35 +326,46 @@ pub fn set_resume(on: bool) -> io::Result<()> {
     Ok(())
 }
 
-/// The file and what it is renamed to while Resume is turned off.
+/// A program that does nothing and ends at once, which stands in for CrossDeviceResume.exe while Resume is turned
+/// off. Its source is `tools/noop.rs`.
+const NOOP_EXE: &[u8] = include_bytes!("../assets/noop.exe");
+
+/// The file the stub takes the place of, and where the original is kept meanwhile.
 fn resume_paths() -> (PathBuf, PathBuf) {
     let exe = system::windows_dir().join(RESUME_DIR).join(RESUME_EXE);
-    let renamed = exe.with_file_name(format!("{RESUME_EXE}{RESUME_OFF_EXT}"));
-    (exe, renamed)
+    let program_data = std::env::var_os("ProgramData").map_or_else(|| PathBuf::from(r"C:\ProgramData"), PathBuf::from);
+    (exe, program_data.join("UpdateCheck").join("CrossDeviceResume.exe.original"))
 }
 
-/// Sets the policy's current value and its default, and renames CrossDeviceResume.exe, with cmd.exe as
-/// administrator, without a window, so Windows asks only once.
+/// Whether CrossDeviceResume.exe is the stub.
+fn resume_is_stub(exe: &std::path::Path) -> bool {
+    std::fs::metadata(exe).is_ok_and(|meta| meta.len() == NOOP_EXE.len() as u64)
+}
+
+/// Sets the policy's current value and its default, and swaps CrossDeviceResume.exe for the stub or back, with
+/// cmd.exe as administrator, without a window, so Windows asks only once.
 fn set_resume_policy_as_admin(data: u32) -> io::Result<()> {
     // The policy keys have no space in them, so cmd.exe needs no quotes for them.
     let add = |key: &str, value: &str| format!(r"reg add HKLM\{key} /v {value} /t REG_DWORD /d {data} /f /reg:64");
-    let (exe, renamed) = resume_paths();
-    let rename = if data == 1 {
-        // The package's files belong to TrustedInstaller, so the administrators take the file over first.
-        if renamed.exists() || !exe.exists() {
-            "ver >nul".to_owned()
-        } else {
-            format!(
-                r#"takeown /f "{0}" && icacls "{0}" /grant *S-1-5-32-544:F && ren "{0}" {RESUME_EXE}{RESUME_OFF_EXT}"#,
-                exe.display()
-            )
-        }
-    } else if renamed.exists() && !exe.exists() {
-        format!(r#"ren "{}" {RESUME_EXE}"#, renamed.display())
+    let (exe, original) = resume_paths();
+    let swap = if data == 1 && exe.exists() && !resume_is_stub(&exe) {
+        let stub = std::env::temp_dir().join("UpdateCheck-noop.exe");
+        std::fs::write(&stub, NOOP_EXE)?;
+        let folder = original.parent().map(|folder| folder.display().to_string()).unwrap_or_default();
+        // The package's files belong to TrustedInstaller, so the administrators take the file over first. Windows
+        // starts the file at every sign-in and complains when it is gone, hence the stub instead of a rename.
+        format!(
+            r#"takeown /f "{exe}" && icacls "{exe}" /grant *S-1-5-32-544:F && (if not exist "{folder}" mkdir "{folder}") && copy /y "{exe}" "{original}" && copy /y "{stub}" "{exe}""#,
+            exe = exe.display(),
+            original = original.display(),
+            stub = stub.display(),
+        )
+    } else if data == 0 && resume_is_stub(&exe) && original.exists() {
+        format!(r#"copy /y "{}" "{}""#, original.display(), exe.display())
     } else {
         "ver >nul".to_owned()
     };
-    let parameters = format!("/c {} && {} && {rename}", add(RESUME_CURRENT, RESUME_VALUE), add(RESUME_POLICY, "value"));
+    let parameters = format!("/c {} && {} && {swap}", add(RESUME_CURRENT, RESUME_VALUE), add(RESUME_POLICY, "value"));
     match system::run_elevated(&system::system32("cmd.exe"), &parameters, Duration::from_secs(30)) {
         Ok(Some(0)) => Ok(()),
         Ok(Some(code)) => Err(io::Error::other(format!("reg.exe ended with exit code {code}"))),
