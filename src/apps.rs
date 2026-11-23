@@ -680,20 +680,21 @@ pub fn remove(manager: &PackageManager, app: &App) -> Outcome {
 
 /// Remove the apps one after another, telling `progress` which one is next, and add what happened to the log.
 pub fn remove_all(apps: &[App], progress: impl Fn(usize)) -> Vec<Outcome> {
-    let outcomes: Vec<Outcome> = match PackageManager::new() {
-        Ok(manager) => apps
-            .iter()
-            .enumerate()
-            .map(|(index, app)| {
-                progress(index);
-                remove(&manager, app)
-            })
-            .collect(),
-        Err(error) => {
-            let reason = format!("Windows couldn't start removing apps. (error 0x{:08X})", error.code().0 as u32);
-            apps.iter().map(|_| Outcome::NotRemoved(reason.clone())).collect()
-        }
-    };
+    let manager = PackageManager::new()
+        .map_err(|error| format!("Windows couldn't start removing apps. (error 0x{:08X})", error.code().0 as u32));
+    let outcomes: Vec<Outcome> = apps
+        .iter()
+        .enumerate()
+        .map(|(index, app)| {
+            progress(index);
+            match (&manager, app.switch()) {
+                // Parts of Windows are turned off without the package manager.
+                (_, Some(switch)) => turn_off(switch),
+                (Ok(manager), None) => remove(manager, app),
+                (Err(reason), None) => Outcome::NotRemoved(reason.clone()),
+            }
+        })
+        .collect();
     let now = chrono::Local::now().naive_local();
     write_log(&log_text(now, apps, &outcomes));
     outcomes
