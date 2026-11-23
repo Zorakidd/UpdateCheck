@@ -67,16 +67,62 @@ pub const CATALOG: &[Known] = &[
     app("Microsoft.Office.Sway", "Sway", "", true),
     app("Microsoft.NetworkSpeedTest", "Network Speed Test", "", true),
     app("Microsoft.XboxApp", "Xbox Console Companion", "Retired. The Xbox app replaced it.", true),
+    app("Microsoft.BingTranslator", "Translator", RETIRED, true),
+    app("Microsoft.MicrosoftPowerBIForWindows", "Power BI", RETIRED, true),
+    app("Microsoft.RemoteDesktop", "Remote Desktop app", "Retired. Remote Desktop Connection, which comes with Windows, stays.", true),
+    app("Microsoft.Windows.AIHub", "AI Hub", "", true),
+    app("Microsoft.PCManager", "PC Manager", "", true),
+    app("Microsoft.MicrosoftPCManager", "PC Manager", "", true),
+    app("MicrosoftWindows.Client.WebExperience", "Widgets", "The news and weather board on the taskbar.", true),
+    app("Microsoft.StartExperiencesApp", "Widgets", "The news and weather board on the taskbar.", true),
+    // Left over from Windows 10.
+    app("Microsoft.WindowsFeedback", "Windows Feedback", "Retired. The Feedback Hub replaced it.", true),
+    app("Microsoft.Office.Lens", "Office Lens", RETIRED, true),
+    app("Microsoft.FreshPaint", "Fresh Paint", "", true),
+    app("Microsoft.CommsPhone", "Phone", RETIRED, true),
+    app("Microsoft.WindowsPhone", "Phone Companion", RETIRED, true),
+    app("Microsoft.ConnectivityStore", "Microsoft Wi-Fi", RETIRED, true),
+    app("Microsoft.WindowsReadingList", "Reading List", RETIRED, true),
     // Trials, promotions and games that come with a new PC.
+    app("5A894077.McAfeeSecurity", "McAfee", "Microsoft Defender protects the PC again once it is gone.", true),
     app("7EE7776C.LinkedInforWindows", "LinkedIn", "", true),
     app("king.com.", "", "", true),
     app("A278AB0D.", "", "", true),
     app("Nordcurrent.CookingFever", "Cooking Fever", "", true),
-    app("flaregamesGmbH.RoyalRevolt2", "Royal Revolt 2", "", true),
+    app("flaregamesGmbH.", "", "", true),
+    app("GAMELOFTSA.", "", "", true),
+    app("D52A8D61.", "", "", true),
+    app("TheNewYorkTimes.NYTCrossword", "NYT Crossword", "", true),
     app("Playtika.CaesarsSlotsFreeCasino", "Caesars Slots", "", true),
     app("ActiproSoftwareLLC.562882FEEB491", "Code Writer", "", true),
     app("46928bounde.EclipseManager", "Eclipse Manager", "", true),
     app("PricelinePartnerNetwork.Booking.comBigsavingsonhot", "Booking.com", "", true),
+    app("AdobeSystemsIncorporated.AdobePhotoshopExpress", "Photoshop Express", "", true),
+    app("2FE3CB00.PicsArt-PhotoStudio", "PicsArt", "", true),
+    app("613EBCEA.PolarrPhotoEditorAcademicEdition", "Polarr", "", true),
+    app("89006A2E.AutodeskSketchBook", "SketchBook", "", true),
+    app("ThumbmunkeysLtd.PhototasticCollage", "Phototastic Collage", "", true),
+    app("WinZipComputing.WinZipUniversal", "WinZip Universal", "", true),
+    app("DB6EA5DB.CyberLinkMediaSuiteEssentials", "CyberLink Media Suite", "", true),
+    app("Flipboard.Flipboard", "Flipboard", "", true),
+    app("D5EA27B7.Duolingo-LearnLanguagesforFree", "Duolingo", "", true),
+    app("XINGAG.XING", "XING", "", true),
+    app("ShazamEntertainmentLtd.Shazam", "Shazam", "", true),
+    app("ClearChannelRadioDigital.iHeartRadio", "iHeartRadio", "", true),
+    app("TuneIn.TuneInRadio", "TuneIn Radio", "", true),
+    app("A025C540.Yandex.Music", "Yandex Music", "", true),
+    app("9E2F88E3.Twitter", "Twitter", "", true),
+    app("6Wunderkinder.Wunderlist", "Wunderlist", "Retired. Microsoft To Do replaced it.", true),
+    app("Fitbit.FitbitCoach", "Fitbit Coach", "", true),
+    // What PC makers add to welcome you, register the PC or sell you something. Their tools for drivers,
+    // updates, fans or the battery are never offered.
+    app("AD2F1837.HPJumpStarts", "HP JumpStarts", "", true),
+    app("AD2F1837.HPWelcome", "HP Welcome", "", true),
+    app("AD2F1837.HPRegistration", "HP Registration", "", true),
+    app("AD2F1837.HPConnectedMusic", "HP Connected Music", "", true),
+    app("AD2F1837.HPConnectedPhotopoweredbySnapfish", "HP Connected Photo", "", true),
+    app("AcerIncorporated.AcerRegistration", "Acer Registration", "", true),
+    app("SAMSUNGELECTRONICSCO.LTD.SamsungWelcome", "Samsung Welcome", "", true),
     // Useful to some: offered, but never picked for you.
     app("Microsoft.BingWeather", "Weather", "", false),
     app("Microsoft.BingSearch", "Bing Search", "Gives Windows Search its web results.", false),
@@ -85,6 +131,7 @@ pub const CATALOG: &[Known] = &[
     app("Microsoft.Copilot", "Copilot", "Microsoft's AI assistant.", false),
     app("Microsoft.OutlookForWindows", "Outlook (new)", "Keep it if you read your mail with it.", false),
     app("Microsoft.Todos", "Microsoft To Do", "Keep it if you keep lists in it.", false),
+    app("Microsoft.Office.Todo.List", "Microsoft To Do", "Keep it if you keep lists in it.", false),
     app("Microsoft.MicrosoftStickyNotes", "Sticky Notes", "Keep it if you keep notes in it.", false),
     app("Microsoft.Office.OneNote", "OneNote for Windows 10", "Retired. Your notes stay in OneDrive.", false),
     app("Microsoft.WindowsSoundRecorder", "Sound Recorder", "", false),
@@ -94,19 +141,38 @@ pub const CATALOG: &[Known] = &[
     app("MSTeams", "Microsoft Teams", "Keep it if you use Teams for work or school.", false),
     app("Microsoft.PowerAutomateDesktop", "Power Automate", "Keep it if you have automated tasks.", false),
     app("SpotifyAB.SpotifyMusic", "Spotify", "Keep it if you listen with it.", false),
-    app("MicrosoftWindows.Client.WebExperience", "Widgets", "The news and weather board on the taskbar.", false),
     app("Microsoft.ZuneVideo", "Films & TV", "Media Player plays videos too.", false),
     app("Microsoft.GamingApp", "Xbox", "Needed for PC Game Pass and some games.", false),
     app("Microsoft.XboxGamingOverlay", "Game Bar", "Records clips and shows performance in games.", false),
+    app("Microsoft.XboxGameOverlay", "Game Bar", "Records clips and shows performance in games.", false),
     app("Microsoft.XboxSpeechToTextOverlay", "Xbox speech to text", "Captions for voice chat in games.", false),
     app("Microsoft.Edge.GameAssist", "Edge Game Assist", "A browser on top of games.", false),
+    app("MicrosoftCorporationII.MicrosoftFamily", "Family", "Keep it if you look after a child's account.", false),
+    app("Microsoft.MicrosoftJournal", "Journal", "Keep it if you write in it with a pen.", false),
+    app("Microsoft.Whiteboard", "Whiteboard", "Keep it if you draw on it with others.", false),
+    app("MicrosoftCorporationII.Windows365", "Windows App", "Keep it if you connect to a Cloud PC or a remote PC with it.", false),
+    app("Microsoft.M365Companions", "Microsoft 365 Companions", "Keep it if you use its People, Files or Calendar on the taskbar.", false),
+    app("4DF9E0F8.Netflix", "Netflix", "Keep it if you watch with it.", false),
+    app("AmazonVideo.PrimeVideo", "Prime Video", "Keep it if you watch with it.", false),
+    app("Disney.37853FC22B2CE", "Disney+", "Keep it if you watch with it.", false),
+    app("HULULLC.HULUPLUS", "Hulu", "Keep it if you watch with it.", false),
+    app("SlingTVLLC.SlingTV", "Sling TV", "Keep it if you watch with it.", false),
+    app("CAF9E577.Plex", "Plex", "Keep it if you watch your media with it.", false),
+    app("PandoraMediaInc.", "Pandora", "Keep it if you listen with it.", false),
+    app("BytedancePte.Ltd.TikTok", "TikTok", "Keep it if you use it on this PC.", false),
+    app("Facebook.", "", "Keep it if you use it on this PC.", false),
+    app("Amazon.com.Amazon", "Amazon", "Keep it if you shop with it.", false),
+    app("KeeperSecurityInc.Keeper", "Keeper", "Keep it if your passwords are in it.", false),
+    app("Drawboard.DrawboardPDF", "Drawboard PDF", "Keep it if you mark up PDFs with it.", false),
 ];
 
 /// The list's entry for a package, by the package's name.
 pub fn known(package: &str) -> Option<&'static Known> {
     CATALOG.iter().find(|known| {
         if known.package.ends_with('.') {
-            package.len() > known.package.len() && package.starts_with(known.package)
+            // Publishers don't always write their own name the same way, such as Facebook and FACEBOOK.
+            package.len() > known.package.len()
+                && package.get(..known.package.len()).is_some_and(|start| start.eq_ignore_ascii_case(known.package))
         } else {
             package.eq_ignore_ascii_case(known.package)
         }
@@ -490,6 +556,7 @@ pub fn remove_all(apps: &[App], progress: impl Fn(usize)) -> Vec<Outcome> {
     outcomes
 }
 
+
 /// What the removal said, for the window, such as "Removed 2 of 3 apps.".
 pub fn result_text(outcomes: &[Outcome]) -> String {
     let total = outcomes.len();
@@ -600,13 +667,18 @@ fn steps(name: &str) -> String {
     OPEN_INSTALLED_APPS.replace("{name}", name)
 }
 
-/// Trial software that PC makers put on new PCs, by the start of its name in the list of installed programs.
-const TRIALS: [(&str, &str); 5] = [
+/// Trial software that PC makers put on new PCs, and what Windows leaves behind, by the start of its name in the
+/// list of installed programs.
+const TRIALS: [(&str, &str); 9] = [
     ("McAfee", "Microsoft Defender protects the PC again once it is gone."),
     ("Norton", "Microsoft Defender protects the PC again once it is gone."),
     ("WildTangent", ""),
     ("Dropbox Promotion", ""),
     ("ExpressVPN", "Keep it if you pay for it."),
+    ("CyberLink", "Keep it if you bought it or play discs with it."),
+    ("WPS Office", "Keep it if you write your documents with it."),
+    ("Windows PC Health Check", "It only checks whether the PC can run Windows 11."),
+    ("Teams Machine-Wide Installer", "It puts the retired classic Teams back for everyone who signs in."),
 ];
 
 fn installed(display_names: &mut Vec<String>, hive: Hive, key: &str) {
@@ -700,7 +772,17 @@ mod tests {
             "MicrosoftWindows.CrossDevice",
             "Microsoft.WebMediaExtensions",
             "Microsoft.VCLibs.140.00",
+            "Microsoft.StorePurchaseApp",
+            "Microsoft.ApplicationCompatibilityEnhancements",
+            "Microsoft.AV1VideoExtension",
+            "MicrosoftWindows.Client.CoreAI",
+            "Microsoft.MinecraftUWP",
+            "5319275A.WhatsAppDesktop",
+            "DolbyLaboratories.DolbyAccess",
+            "E046963F.LenovoCompanion",
+            "AD2F1837.HPSupportAssistant",
             "king.com.",
+            "Facebook.",
         ] {
             assert!(known(package).is_none(), "{package} must not be offered");
         }
@@ -712,6 +794,25 @@ mod tests {
         assert_eq!(known("microsoft.bingnews").map(|known| known.name), Some("Microsoft News"));
         assert!(known("king.com.CandyCrushSaga").is_some_and(|known| known.recommended && known.name.is_empty()));
         assert!(known("Microsoft.GamingApp").is_some_and(|known| !known.recommended));
+        // A publisher's apps, however it writes its name.
+        assert!(known("FACEBOOK.317180B0BB486").is_some_and(|known| !known.recommended && known.name.is_empty()));
+        assert!(known("flaregamesgmbh.RoyalRevolt2").is_some_and(|known| known.recommended));
+        // Both packages of Widgets go together, as one app that is picked for you.
+        for package in ["MicrosoftWindows.Client.WebExperience", "Microsoft.StartExperiencesApp"] {
+            assert!(known(package).is_some_and(|known| known.name == "Widgets" && known.recommended), "{package}");
+        }
+    }
+
+    #[test]
+    fn packages_shown_as_one_app_agree_on_being_recommended() {
+        // The list merges packages of the same name only when they are next to each other, and it sorts the
+        // recommended ones first.
+        for known in CATALOG {
+            for other in CATALOG.iter().filter(|other| other.name == known.name && !known.name.is_empty()) {
+                assert_eq!(known.recommended, other.recommended, "{} and {}", known.package, other.package);
+                assert_eq!(known.note, other.note, "{} and {}", known.package, other.package);
+            }
+        }
     }
 
     #[test]

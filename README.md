@@ -70,13 +70,18 @@ so you see at a glance which steps matter this week.
 - The **Apps** tab lists the apps that came with Windows or the PC and that hardly anyone uses, the ones
   worth removing first. **Select recommended** ticks those, **Select all** every app on the tab. Calculator,
   Photos, Notepad and everything Windows needs are never offered.
+- That covers Windows 10 and 11: retired Microsoft apps, Widgets, the games and trials that come with a new
+  PC and what PC makers add to welcome you or register the PC. Their tools for drivers, updates, fans or the
+  battery are never offered. Streaming and social apps such as Netflix or TikTok are offered, but never
+  picked for you.
 - **Remove selected** asks first, then removes the ticked apps for your account only. The Microsoft Store
   has every one of them if you want one back.
 - **Resume**, which continues on the PC what you had open on your phone, is part of Windows and can't be
   removed. Ticking it turns it off for everyone on the PC, which takes administrator rights, so
   `CrossDeviceResume.exe` no longer runs in the background. **Turn on** at the end of the tab brings it back.
-- Microsoft Edge (where Windows allows it, in the European Economic Area), OneDrive and trial software can only be removed in Windows'
-  Settings, so the tab tells you step by step how.
+- Microsoft Edge (where Windows allows it, in the European Economic Area), OneDrive, trial software and
+  what Windows leaves behind, such as PC Health Check, can only be removed in Windows' Settings, so the tab
+  tells you step by step how.
 - **Ignore** keeps an app: it is no longer offered or counted, and is listed at the end of the tab with
   **Show again**.
 
