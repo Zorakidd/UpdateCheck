@@ -75,7 +75,8 @@ so you see at a glance which steps matter this week.
   battery are never offered. Streaming and social apps such as Netflix or TikTok are offered, but never
   picked for you.
 - **Remove selected** asks first, then removes the ticked apps for your account only. The Microsoft Store
-  has every one of them if you want one back.
+  has every one of them if you want one back. It also stops Windows from quietly installing the apps it
+  promotes, such as games in Start, so the removed ones don't come back.
 - **Resume**, which continues on the PC what you had open on your phone, is part of Windows and can't be
   removed. Ticking it turns it off for everyone on the PC, which takes administrator rights, so
   `CrossDeviceResume.exe` no longer runs in the background. **Turn on** at the end of the tab brings it back.

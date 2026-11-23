@@ -553,9 +553,30 @@ pub fn remove_all(apps: &[App], progress: impl Fn(usize)) -> Vec<Outcome> {
     };
     let now = chrono::Local::now().naive_local();
     write_log(&log_text(now, apps, &outcomes));
+    stop_suggested_installs();
     outcomes
 }
 
+/// Where Windows keeps whether it may install the apps it promotes, such as games in Start, by itself.
+const CONTENT_DELIVERY: &str = r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";
+const SUGGESTED_INSTALLS: [&str; 3] = ["SilentInstalledAppsEnabled", "OemPreInstalledAppsEnabled", "PreInstalledAppsEnabled"];
+
+/// Stop Windows from quietly installing the apps it promotes, so the ones just removed don't come back.
+/// This is the account's own setting and needs no administrator rights.
+fn stop_suggested_installs() {
+    if !system::reg_key_exists(Hive::CurrentUser, CONTENT_DELIVERY) {
+        return;
+    }
+    for value in SUGGESTED_INSTALLS {
+        if system::reg_dword(Hive::CurrentUser, CONTENT_DELIVERY, value) == Some(0) {
+            continue;
+        }
+        match system::set_reg_dword(Hive::CurrentUser, CONTENT_DELIVERY, value, 0) {
+            Ok(()) => applog::info("apps", format!("Turned off {value}, so Windows no longer installs promoted apps by itself.")),
+            Err(error) => applog::warning("apps", format!("Couldn't turn off {value}: {error}")),
+        }
+    }
+}
 
 /// What the removal said, for the window, such as "Removed 2 of 3 apps.".
 pub fn result_text(outcomes: &[Outcome]) -> String {
