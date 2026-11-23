@@ -353,9 +353,10 @@ fn set_resume_policy_as_admin(data: u32) -> io::Result<()> {
         std::fs::write(&stub, NOOP_EXE)?;
         let folder = original.parent().map(|folder| folder.display().to_string()).unwrap_or_default();
         // The package's files belong to TrustedInstaller, so the administrators take the file over first. Windows
-        // starts the file at every sign-in and complains when it is gone, hence the stub instead of a rename.
+        // starts the file at every sign-in and complains when it is gone, hence the stub instead of a rename. A
+        // running copy locks the file, so it is ended first or the last copy would fail with exit code 1.
         format!(
-            r#"takeown /f "{exe}" && icacls "{exe}" /grant *S-1-5-32-544:F && (if not exist "{folder}" mkdir "{folder}") && copy /y "{exe}" "{original}" && copy /y "{stub}" "{exe}""#,
+            r#"(taskkill /f /im {RESUME_EXE} >nul 2>&1 & ping -n 2 127.0.0.1 >nul) && takeown /f "{exe}" && icacls "{exe}" /grant *S-1-5-32-544:F && (if not exist "{folder}" mkdir "{folder}") && copy /y "{exe}" "{original}" && copy /y "{stub}" "{exe}""#,
             exe = exe.display(),
             original = original.display(),
             stub = stub.display(),
