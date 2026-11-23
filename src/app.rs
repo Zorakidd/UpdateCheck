@@ -1162,19 +1162,15 @@ fn dialog_text(dialog: &Dialog, settings: &state::Settings) -> DialogText {
                 };
                 notes.push(format!("You can install {again} again from the Microsoft Store at any time."));
             }
+            if switches.contains(&apps::Switch::Ads) {
+                notes.push("Windows ads are turned off for your account only.".to_owned());
+            }
             if switches.contains(&apps::Switch::Resume) {
                 notes.push(
-                    "Turning off Resume affects everyone on this PC, so Windows asks for administrator rights.".to_owned(),
+                    "Resume is turned off for everyone on this PC, so Windows asks for administrator rights. The end of \
+                     the Apps tab turns it on again."
+                        .to_owned(),
                 );
-            }
-            let account: Vec<&str> =
-                switches.iter().filter(|switch| **switch != apps::Switch::Resume).map(|switch| switch.name()).collect();
-            if !account.is_empty() {
-                notes.push(format!("Turning off {} affects only your account.", apps::and_list(&account)));
-            }
-            if !switches.is_empty() {
-                let again = if switches.len() == 1 { "it" } else { "them" };
-                notes.push(format!("The end of the Apps tab turns {again} on again."));
             }
             DialogText {
                 title,
