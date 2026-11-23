@@ -66,15 +66,29 @@ The installed packages and the services were also checked on a Windows 11 Pro 26
 - Windows PC Health Check, which came with KB5005463 on Windows 10.
 - Teams Machine-Wide Installer, which puts the retired classic Teams back for everyone who signs in.
 
-### Windows no longer quietly installs promoted apps
+### Windows no longer quietly installs promoted apps (entry "Automatic app installs")
 
-- After removing apps, **Remove selected** sets three values to 0:
+- The Apps tab lists it as a recommended entry while it is on. Ticking it and **Remove selected** sets three values to 0:
   - The values are `SilentInstalledAppsEnabled`, `OemPreInstalledAppsEnabled` and `PreInstalledAppsEnabled`.
   - They are in `HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager`.
 - Without this, Windows can quietly bring back Candy Crush and other promoted apps. On the PC that was checked, all three were 1.
+- Once it is off, the end of the tab lists it under **Turned off** with **Turn on**, which sets the values to 1 again.
 - Microsoft's own policies only work on Enterprise and Education, not on Pro:
   - `RemoveDefaultMicrosoftStorePackages`
   - `DisableWindowsConsumerFeatures`
+
+### Tips, suggestions and ads (entry "Suggestions")
+
+- Also recommended, for the signed-in account only, and undone the same way with **Turn on**.
+- It sets these values to 0, the ones Win11Debloat's `Disable_Windows_Suggestions.reg` sets under `HKCU`:
+  - In `ContentDeliveryManager`: `SubscribedContent-310093Enabled` (the welcome after updates), `SubscribedContent-338388Enabled` and `SystemPaneSuggestionsEnabled` (suggestions in Start), `SubscribedContent-338389Enabled` and `SoftLandingEnabled` (tips), `SubscribedContent-338393Enabled`, `-353694Enabled`, `-353696Enabled` and `-353698Enabled` (suggestions in Settings).
+  - In `Explorer\Advanced`: `Start_IrisRecommendations` (recommendations in Start) and `ShowSyncProviderNotifications` (OneDrive and other cloud ads in File Explorer).
+  - `UserProfileEngagement\ScoobeSystemSettingEnabled` ("finish setting up your PC").
+  - `Notifications\Settings\Windows.SystemToast.Suggested\Enabled` (notifications that suggest Microsoft's services).
+- A missing value counts as on, as Windows treats it. Missing keys are created.
+- Left out from the same file:
+  - The HKLM policies `DisableCopilotPinScreen` and `HideRecommendedPersonalizedSites`, which need administrator rights.
+  - `Mobility\OptedIn`, `Start_AccountNotifications`, `EnableAccountNotifications` and the backup reminder. They are about the phone, the account and backups rather than ads.
 
 ## Still open: needs administrator rights (one UAC prompt, like Clear DNS cache)
 
@@ -136,7 +150,7 @@ Don't turn off **Microsoft Compatibility Appraiser**. Windows Update uses its da
 ### More settings from Win11Debloat
 
 - `PreventDeviceMetadataFromNetwork` (an HKLM policy) stops Windows from fetching makers' apps for connected devices.
-- `Disable_Windows_Suggestions` (HKCU) turns off tips and suggestions in Start and in Settings.
+- The HKCU part of `Disable_Windows_Suggestions` is built in, as the entry "Suggestions" (see above).
 
 ## Deliberately left out
 

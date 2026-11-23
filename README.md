@@ -75,11 +75,15 @@ so you see at a glance which steps matter this week.
   battery are never offered. Streaming and social apps such as Netflix or TikTok are offered, but never
   picked for you.
 - **Remove selected** asks first, then removes the ticked apps for your account only. The Microsoft Store
-  has every one of them if you want one back. It also stops Windows from quietly installing the apps it
-  promotes, such as games in Start, so the removed ones don't come back.
-- **Resume**, which continues on the PC what you had open on your phone, is part of Windows and can't be
-  removed. Ticking it turns it off for everyone on the PC, which takes administrator rights, so
-  `CrossDeviceResume.exe` no longer runs in the background. **Turn on** at the end of the tab brings it back.
+  has every one of them if you want one back.
+- Some entries are part of Windows, so ticking them turns them off instead, and **Turn on** at the end of the
+  tab brings them back:
+  - **Automatic app installs** stops Windows from quietly installing the apps it promotes, such as games in
+    Start, so the removed ones don't come back. Recommended, for your account only.
+  - **Suggestions** turns off tips, suggested apps and ads in Start, Settings, File Explorer and
+    notifications. Recommended, for your account only.
+  - **Resume**, which continues on the PC what you had open on your phone, is turned off for everyone on the
+    PC, which takes administrator rights, so `CrossDeviceResume.exe` no longer runs in the background.
 - Microsoft Edge (where Windows allows it, in the European Economic Area), OneDrive, trial software and
   what Windows leaves behind, such as PC Health Check, can only be removed in Windows' Settings, so the tab
   tells you step by step how.
@@ -143,7 +147,10 @@ Windows startup. Then delete `UpdateCheck.exe` and the folder `UpdateCheck` in y
   drive and turning Resume off or on, which ask through UAC. The reminder is a per-user sign-in entry (`HKCU\...\Run`) and a per-user
   Task Scheduler task, `UpdateCheck (<user name>)`, both running `UpdateCheck.exe --check`, so several users
   on one PC each have their own. They are re-registered if the .exe moves. Apps are only ever removed for
-  the signed-in user. Turning off Resume sets the policy `Connectivity/DisableCrossDeviceResume` to `1` with
+  the signed-in user. **Automatic app installs** sets `SilentInstalledAppsEnabled`, `OemPreInstalledAppsEnabled`
+  and `PreInstalledAppsEnabled` in `HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager` to
+  `0`, and **Suggestions** sets the values Win11Debloat's `Disable_Windows_Suggestions.reg` sets under `HKCU`
+  (listed in `src/apps.rs`) to `0`; **Turn on** sets them to `1`. Turning off Resume sets the policy `Connectivity/DisableCrossDeviceResume` to `1` with
   `reg.exe`, both its current value (`HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\Connectivity`,
   `DisableCrossDeviceResume`) and its default (`...\PolicyManager\default\Connectivity\DisableCrossDeviceResume`,
   `value`). The policy alone doesn't stop Windows from starting it, and renaming the file makes Windows complain

@@ -35,8 +35,10 @@ Stand 08.11.2026, auf dem Branch rust-rewrite (lokal committet, nicht gepusht):
 - Build in a  ipconfig/flushdns and more tools
 
 - [x] Debloat-Recherche (23.11.2026, alles in docs/debloat.md): rund 60 Apps mehr im Tab „Apps“ (Windows 10 und 11,
-  Widgets jetzt empfohlen), vier Einträge mehr bei den Einstellungs-Anleitungen, und „Remove selected“ verhindert,
-  dass Windows Werbe-Apps still nachinstalliert.
+  Widgets jetzt empfohlen), vier Einträge mehr bei den Einstellungs-Anleitungen, dazu zwei empfohlene Schalter
+  ohne Adminrechte: „Automatic app installs“ (Windows installiert Werbe-Apps nicht mehr still nach) und
+  „Suggestions“ (Tipps und Werbung in Start, Einstellungen, Explorer und Benachrichtigungen). Beide stehen danach
+  unter „Turned off“ mit „Turn on“, wie Resume.
 - [ ] Debloat mit Adminrechten (ein UAC-Fenster), siehe docs/debloat.md:
   - [ ] Dienste: DiagTrack deaktivieren, WSAIFabricSvc und MapsBroker auf Manuell.
   - [ ] Apps zusätzlich für alle Konten entfernen (vorinstallierte Pakete), damit sie nach Feature-Updates
