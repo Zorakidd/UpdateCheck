@@ -46,8 +46,8 @@ pub(super) struct AppsPage {
     removal_at: Arc<AtomicUsize>,
     removal_names: Vec<String>,
     result: Option<String>,
-    /// Turning Resume on again, which may wait for the user to give administrator rights.
-    turning_on: Option<Task<std::io::Result<()>>>,
+    /// Turning a part of Windows on again. For Resume, this may wait for the user to give administrator rights.
+    turning_on: Option<Task<(apps::Switch, std::io::Result<()>)>>,
 }
 
 impl App {
@@ -104,7 +104,7 @@ impl App {
         }
         if let Some(outcomes) = finished(&mut self.apps.removal) {
             self.apps.result = Some(match outcomes {
-                Some(outcomes) => apps::result_text(&outcomes),
+                Some(outcomes) => apps::result_text(&self.apps.removal_names, &outcomes),
                 None => "Removing apps stopped unexpectedly. The log may say how far it got.".to_owned(),
             });
             self.apps.selected.clear();
@@ -113,13 +113,14 @@ impl App {
         }
         if let Some(result) = finished(&mut self.apps.turning_on) {
             match result {
-                Some(Ok(())) => {}
-                Some(Err(error)) if apps::declined(&error) => {}
-                Some(Err(error)) => {
-                    applog::warning("apps", format!("Couldn't turn on Resume: {error}"));
-                    self.message("Couldn't turn on Resume", format!("Windows couldn't turn it on: {error}"));
+                Some((_, Ok(()))) => {}
+                Some((_, Err(error))) if apps::declined(&error) => {}
+                Some((switch, Err(error))) => {
+                    let name = switch.name();
+                    applog::warning("apps", format!("Couldn't turn on {name}: {error}"));
+                    self.message(format!("Couldn't turn on {name}"), format!("Windows couldn't turn it on: {error}"));
                 }
-                None => self.message("Couldn't turn on Resume", "Turning it on stopped unexpectedly."),
+                None => self.message("Couldn't turn it on", "Turning it on stopped unexpectedly."),
             }
             self.start_scan();
         }
@@ -322,17 +323,23 @@ impl App {
                 self.actions.push(Action::OpenForStep { target: INSTALLED_APPS.to_owned(), step: state::APPS_STEP });
             }
         }
-        let mut turn_on = false;
-        if scan.resume_off {
+        let mut turn_on = None;
+        if !scan.turned_off.is_empty() {
             ui::section(ui, "Turned off", 18.0);
-            ui::text(ui, "Part of Windows, so turned off for everyone on this PC instead of removed.", ui::regular(12.0), p.muted);
+            ui::text(ui, "Part of Windows, so turned off instead of removed.", ui::regular(12.0), p.muted);
             ui.add_space(6.0);
             ui::card(p).show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                let text = "Windows starts it again at the next sign-in after you turn it on.";
                 let enabled = !removing && self.apps.turning_on.is_none();
-                turn_on = super::button_row(ui, Id::unique("turn-on-resume"), "Resume", text, "Turn on", Look::Secondary, enabled)
-                    .clicked();
+                for (index, switch) in scan.turned_off.iter().enumerate() {
+                    if index > 0 {
+                        ui.add_space(8.0);
+                    }
+                    let id = Id::unique(("turn-on", switch.name()));
+                    if super::button_row(ui, id, switch.name(), switch.when_off(), "Turn on", Look::Secondary, enabled).clicked() {
+                        turn_on = Some(*switch);
+                    }
+                }
             });
         }
         let mut show_again = None;
@@ -358,15 +365,15 @@ impl App {
         if let Some(key) = show_again {
             self.offer_again(&key);
         }
-        if turn_on {
-            self.turn_on_resume();
+        if let Some(switch) = turn_on {
+            self.turn_on(switch);
         }
     }
 
-    /// Turns Resume on in the background, since Windows may first ask for administrator rights.
-    fn turn_on_resume(&mut self) {
+    /// Turns a part of Windows on in the background, since for Resume Windows first asks for administrator rights.
+    fn turn_on(&mut self, switch: apps::Switch) {
         if self.apps.turning_on.is_none() {
-            self.apps.turning_on = Some(Task::spawn(&self.ctx, "turning on Resume", || apps::set_resume(true)));
+            self.apps.turning_on = Some(Task::spawn(&self.ctx, "turning on", move || (switch, switch.set(true))));
         }
     }
 
@@ -411,11 +418,22 @@ impl App {
             ("Nothing selected".to_owned(), "Tick the apps you don't use. Only your account loses them.")
         } else {
             let title = if count == 1 { "1 app selected".to_owned() } else { format!("{count} apps selected") };
-            // Resume is turned off for the whole PC instead.
-            let text = match (count, chosen.iter().any(apps::App::turns_off)) {
-                (1, true) => "Resume is turned off for everyone on this PC. You can turn it on again here.",
-                (_, true) => "Resume is turned off for everyone on this PC, the others removed for your account only.",
-                _ => "Only your account loses them, and the Microsoft Store has them if you want one back.",
+            // Parts of Windows are turned off instead, Resume for the whole PC.
+            let switches: Vec<apps::Switch> = chosen.iter().filter_map(apps::App::switch).collect();
+            let text = if switches.contains(&apps::Switch::Resume) {
+                match count {
+                    1 => "Resume is turned off for everyone on this PC. You can turn it on again here.",
+                    _ => "Resume is turned off for everyone on this PC, the rest only for your account.",
+                }
+            } else if switches.len() == count {
+                match count {
+                    1 => "Turned off for your account only. You can turn it on again here.",
+                    _ => "Turned off for your account only. You can turn them on again here.",
+                }
+            } else if !switches.is_empty() {
+                "Only your account is affected. The Microsoft Store has the apps if you want one back."
+            } else {
+                "Only your account loses them, and the Microsoft Store has them if you want one back."
             };
             (title, text)
         };

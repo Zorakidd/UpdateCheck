@@ -1133,20 +1133,25 @@ fn dialog_text(dialog: &Dialog, settings: &state::Settings) -> DialogText {
         },
         Dialog::RemoveApps(apps) => {
             let count = apps.len();
+            // Parts of Windows are turned off instead.
+            let switches: Vec<apps::Switch> = apps.iter().filter_map(apps::App::switch).collect();
+            let all_off = switches.len() == count;
             let (title, button) = match apps.as_slice() {
-                [app] if app.turns_off() => (format!("Turn off {}?", app.name), "Turn off".to_owned()),
+                _ if all_off => {
+                    let names: Vec<&str> = switches.iter().map(|switch| switch.name()).collect();
+                    (format!("Turn off {}?", apps::and_list(&names)), "Turn off".to_owned())
+                }
                 [app] => (format!("Remove {}?", app.name), "Remove".to_owned()),
                 _ => (format!("Remove {count} apps?"), format!("Remove {count} apps")),
             };
             let names: Vec<String> = apps
                 .iter()
-                .map(|app| match app.turns_off() && count > 1 {
+                .map(|app| match app.turns_off() && !all_off {
                     true => format!("\u{2022} {} (turned off)", app.name),
                     false => format!("\u{2022} {}", app.name),
                 })
                 .collect();
-            // Resume is the one app turned off instead.
-            let removed = apps.iter().filter(|app| !app.turns_off()).count();
+            let removed = count - switches.len();
             let mut notes = Vec::new();
             if removed > 0 {
                 let again = match (removed, removed == count) {
@@ -1157,12 +1162,19 @@ fn dialog_text(dialog: &Dialog, settings: &state::Settings) -> DialogText {
                 };
                 notes.push(format!("You can install {again} again from the Microsoft Store at any time."));
             }
-            if removed < count {
+            if switches.contains(&apps::Switch::Resume) {
                 notes.push(
-                    "Resume is turned off for everyone on this PC, so Windows asks for administrator rights. The end of \
-                     the Apps tab turns it on again."
-                        .to_owned(),
+                    "Turning off Resume affects everyone on this PC, so Windows asks for administrator rights.".to_owned(),
                 );
+            }
+            let account: Vec<&str> =
+                switches.iter().filter(|switch| **switch != apps::Switch::Resume).map(|switch| switch.name()).collect();
+            if !account.is_empty() {
+                notes.push(format!("Turning off {} affects only your account.", apps::and_list(&account)));
+            }
+            if !switches.is_empty() {
+                let again = if switches.len() == 1 { "it" } else { "them" };
+                notes.push(format!("The end of the Apps tab turns {again} on again."));
             }
             DialogText {
                 title,

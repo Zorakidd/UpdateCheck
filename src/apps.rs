@@ -1,6 +1,7 @@
 //! Preinstalled apps: the ones that come with Windows or a new PC and that hardly anyone uses. Most can be
 //! removed for this account without administrator rights. A few, such as Microsoft Edge, only Settings can
-//! remove, so for those the app explains where. Resume is part of Windows, so it is turned off instead.
+//! remove, so for those the app explains where. Resume, Windows quietly installing the apps it promotes, and its
+//! suggestions are part of Windows, so they are turned off instead.
 //!
 //! Only apps on the list below are ever offered. Everything else, including what Windows itself needs and the
 //! everyday apps such as Calculator, Photos or Notepad, is left alone.
@@ -195,14 +196,22 @@ pub struct App {
 enum Removal {
     /// Its packages are removed: one per version or processor type the app is installed in.
     Packages(Vec<String>),
-    /// Resume is part of a package Windows needs, so it is turned off instead.
-    TurnOffResume,
+    /// It is part of Windows, so it is turned off instead.
+    TurnOff(Switch),
 }
 
 impl App {
     /// Whether the app is turned off rather than removed.
     pub fn turns_off(&self) -> bool {
-        self.removal == Removal::TurnOffResume
+        self.switch().is_some()
+    }
+
+    /// What is turned off instead of removed, for a part of Windows.
+    pub fn switch(&self) -> Option<Switch> {
+        match self.removal {
+            Removal::TurnOff(switch) => Some(switch),
+            Removal::Packages(_) => None,
+        }
     }
 }
 
@@ -219,8 +228,8 @@ pub struct Guide {
 pub struct Scan {
     pub apps: Vec<App>,
     pub guides: Vec<Guide>,
-    /// Whether Resume is turned off, so the tab can offer to turn it on again.
-    pub resume_off: bool,
+    /// The parts of Windows that are turned off, so the tab can offer to turn them on again.
+    pub turned_off: Vec<Switch>,
 }
 
 impl Scan {
@@ -265,7 +274,7 @@ impl Scan {
         Scan {
             apps: self.apps.iter().filter(|app| !ignored.contains(&app.package)).cloned().collect(),
             guides: self.guides.iter().filter(|guide| !ignored.contains(&guide.name)).cloned().collect(),
-            resume_off: self.resume_off,
+            turned_off: self.turned_off.clone(),
         }
     }
 
@@ -316,15 +325,19 @@ pub fn scan() -> Result<Scan, String> {
             removal: Removal::Packages(vec![full_name]),
         });
     }
-    let resume = resume_on();
-    if resume == Some(true) {
-        apps.push(App {
-            name: "Resume".to_owned(),
-            note: RESUME_NOTE,
-            recommended: false,
-            package: RESUME.to_owned(),
-            removal: Removal::TurnOffResume,
-        });
+    let mut turned_off = Vec::new();
+    for switch in Switch::ALL {
+        match switch.is_on() {
+            Some(true) => apps.push(App {
+                name: switch.name().to_owned(),
+                note: switch.note(),
+                recommended: switch != Switch::Resume,
+                package: switch.key().to_owned(),
+                removal: Removal::TurnOff(switch),
+            }),
+            Some(false) => turned_off.push(switch),
+            None => {}
+        }
     }
     // Two packages can be the same app under an old and a new name, such as Microsoft News.
     apps.sort_by(|a, b| b.recommended.cmp(&a.recommended).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
@@ -335,15 +348,158 @@ pub fn scan() -> Result<Scan, String> {
         }
         same
     });
-    Ok(Scan { apps, guides: guides(), resume_off: resume == Some(false) })
+    Ok(Scan { apps, guides: guides(), turned_off })
+}
+
+// What is turned off instead of removed.
+
+/// A part of Windows that can't be removed, only turned off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Switch {
+    /// Resume, for everyone on the PC, which takes administrator rights.
+    Resume,
+    /// Windows quietly installing the apps it promotes, for this account.
+    AppInstalls,
+    /// Tips, suggestions and ads in Start, Settings, File Explorer and notifications, for this account.
+    Suggestions,
+}
+
+impl Switch {
+    /// In the order the tab lists them once they are turned off.
+    pub const ALL: [Switch; 3] = [Switch::AppInstalls, Switch::Suggestions, Switch::Resume];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Switch::Resume => "Resume",
+            Switch::AppInstalls => "Automatic app installs",
+            Switch::Suggestions => "Suggestions",
+        }
+    }
+
+    /// Its key in the list and among the apps set aside with Ignore.
+    fn key(self) -> &'static str {
+        match self {
+            Switch::Resume => "CrossDeviceResume",
+            Switch::AppInstalls => "SilentInstalledApps",
+            Switch::Suggestions => "SubscribedContent",
+        }
+    }
+
+    fn note(self) -> &'static str {
+        match self {
+            Switch::Resume => {
+                "Continues on this PC what you had open on your phone. It is part of Windows, so it is turned off for \
+                 everyone on this PC instead of removed."
+            }
+            Switch::AppInstalls => {
+                "Windows quietly installs apps it promotes, such as games in Start, and can bring back the ones you \
+                 removed. Turned off for your account. Store updates go on."
+            }
+            Switch::Suggestions => {
+                "Tips, suggested apps and ads in Start, Settings, File Explorer and notifications. Turned off for \
+                 your account."
+            }
+        }
+    }
+
+    /// What the tab says beside Turn on, once it is off.
+    pub fn when_off(self) -> &'static str {
+        match self {
+            Switch::Resume => "For everyone on this PC. Windows starts it again at the next sign-in after you turn it on.",
+            Switch::AppInstalls => "For your account. Windows may install the apps it promotes again once it is on.",
+            Switch::Suggestions => "For your account. Windows shows its tips and suggestions again once it is on.",
+        }
+    }
+
+    /// Whether it is on: none where Windows doesn't have it.
+    fn is_on(self) -> Option<bool> {
+        match self {
+            Switch::Resume => resume_on(),
+            Switch::AppInstalls => account_setting_on(&APP_INSTALLS),
+            Switch::Suggestions => account_setting_on(&SUGGESTIONS),
+        }
+    }
+
+    /// Turns it on or off. Resume takes administrator rights, which Windows asks for unless the app already has
+    /// them; [`declined`] tells whether the user said no.
+    pub fn set(self, on: bool) -> io::Result<()> {
+        match self {
+            Switch::Resume => set_resume(on),
+            Switch::AppInstalls => set_account_setting(&APP_INSTALLS, on),
+            Switch::Suggestions => set_account_setting(&SUGGESTIONS, on),
+        }
+    }
+}
+
+/// Where Windows keeps what it may promote to this account.
+const CONTENT_DELIVERY: &str = r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";
+const EXPLORER_ADVANCED: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
+
+/// What lets Windows install the apps it promotes, such as games in Start, by itself, by key and value.
+const APP_INSTALLS: [(&str, &str); 3] = [
+    (CONTENT_DELIVERY, "SilentInstalledAppsEnabled"),
+    (CONTENT_DELIVERY, "OemPreInstalledAppsEnabled"),
+    (CONTENT_DELIVERY, "PreInstalledAppsEnabled"),
+];
+
+/// The switches in Settings for tips, suggestions and ads, by key and value, as Win11Debloat turns them off.
+const SUGGESTIONS: [(&str, &str); 13] = [
+    // The welcome after updates, with what is new and suggested.
+    (CONTENT_DELIVERY, "SubscribedContent-310093Enabled"),
+    // Suggestions in Start, and recommendations for tips and new apps there.
+    (CONTENT_DELIVERY, "SubscribedContent-338388Enabled"),
+    (CONTENT_DELIVERY, "SystemPaneSuggestionsEnabled"),
+    (EXPLORER_ADVANCED, "Start_IrisRecommendations"),
+    // Tips, tricks and suggestions while using Windows.
+    (CONTENT_DELIVERY, "SubscribedContent-338389Enabled"),
+    (CONTENT_DELIVERY, "SoftLandingEnabled"),
+    // Suggested content in Settings.
+    (CONTENT_DELIVERY, "SubscribedContent-338393Enabled"),
+    (CONTENT_DELIVERY, "SubscribedContent-353694Enabled"),
+    (CONTENT_DELIVERY, "SubscribedContent-353696Enabled"),
+    (CONTENT_DELIVERY, "SubscribedContent-353698Enabled"),
+    // Ways to finish setting up the PC.
+    (r"Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement", "ScoobeSystemSettingEnabled"),
+    // Ads for OneDrive and other cloud storage in File Explorer.
+    (EXPLORER_ADVANCED, "ShowSyncProviderNotifications"),
+    // Notifications that suggest Microsoft's services.
+    (r"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.Suggested", "Enabled"),
+];
+
+/// Whether any of the account's settings is on, as Windows takes a missing one: none where Windows doesn't
+/// promote anything.
+fn account_setting_on(values: &[(&str, &str)]) -> Option<bool> {
+    if !system::reg_key_exists(Hive::CurrentUser, CONTENT_DELIVERY) {
+        return None;
+    }
+    Some(values.iter().any(|(key, value)| system::reg_dword(Hive::CurrentUser, key, value) != Some(0)))
+}
+
+/// Sets all of the account's settings, and goes on past one that fails. The error is the first one.
+fn set_account_setting(values: &[(&str, &str)], on: bool) -> io::Result<()> {
+    let mut result = Ok(());
+    for (key, value) in values {
+        if let Err(error) = system::create_reg_dword(Hive::CurrentUser, key, value, u32::from(on)) {
+            applog::warning("apps", format!("Couldn't set {value} in {key}: {error}"));
+            if result.is_ok() {
+                result = Err(error);
+            }
+        }
+    }
+    result
+}
+
+/// Names in a sentence, such as "Resume and Suggestions".
+pub fn and_list(names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => (*one).to_owned(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 // Resume.
 
-/// Resume, by its key in the list and among the apps set aside with Ignore.
-pub const RESUME: &str = "CrossDeviceResume";
-const RESUME_NOTE: &str = "Continues on this PC what you had open on your phone. It is part of Windows, so it is \
-                           turned off for everyone on this PC instead of removed.";
 const RESUME_EXE: &str = "CrossDeviceResume.exe";
 /// The policy that keeps Windows from starting CrossDeviceResume.exe, as the manifest of the package it is part
 /// of names it (Connectivity/DisableCrossDeviceResume). Its definition here, with its default, shows that this
@@ -375,7 +531,7 @@ fn resume_on() -> Option<bool> {
 
 /// Turns Resume on or off for the PC, and the switch in Settings with it. Windows asks for administrator rights
 /// unless the app already has them; [`declined`] tells whether the user said no.
-pub fn set_resume(on: bool) -> io::Result<()> {
+fn set_resume(on: bool) -> io::Result<()> {
     let data = u32::from(!on);
     // Writing straight away works only when the app runs as administrator, and only once the key exists.
     let direct = system::set_reg_dword(Hive::LocalMachine, RESUME_CURRENT, RESUME_VALUE, data)
@@ -446,19 +602,21 @@ pub fn declined(error: &io::Error) -> bool {
     error.raw_os_error() == Some(system::ERROR_CANCELLED as i32)
 }
 
-/// Turns Resume off and ends CrossDeviceResume.exe, which Windows then no longer starts.
-fn turn_off_resume() -> Outcome {
-    if let Err(error) = set_resume(false) {
-        applog::warning("apps", format!("Couldn't turn off Resume: {error}"));
+/// Turns a part of Windows off. For Resume, it also ends CrossDeviceResume.exe, which Windows then no longer starts.
+fn turn_off(switch: Switch) -> Outcome {
+    if let Err(error) = switch.set(false) {
+        applog::warning("apps", format!("Couldn't turn off {}: {error}", switch.name()));
         return Outcome::NotRemoved(match declined(&error) {
             true => "It needs administrator rights, and Windows didn't get them.".to_owned(),
             false => format!("Windows couldn't turn it off: {error}"),
         });
     }
-    // This ends the copy of this account only; copies of others signed in end when they sign out.
-    let taskkill = system::system32("taskkill.exe");
-    if let Err(error) = system::run_hidden(&taskkill, &["/F", "/IM", RESUME_EXE], Duration::from_secs(10)) {
-        applog::warning("apps", format!("Couldn't end {RESUME_EXE}: {error}"));
+    if switch == Switch::Resume {
+        // This ends the copy of this account only; copies of others signed in end when they sign out.
+        let taskkill = system::system32("taskkill.exe");
+        if let Err(error) = system::run_hidden(&taskkill, &["/F", "/IM", RESUME_EXE], Duration::from_secs(10)) {
+            applog::warning("apps", format!("Couldn't end {RESUME_EXE}: {error}"));
+        }
     }
     Outcome::TurnedOff
 }
@@ -519,7 +677,7 @@ fn remove_package(manager: &PackageManager, full_name: &str) -> Result<(), (HRES
 pub fn remove(manager: &PackageManager, app: &App) -> Outcome {
     let full_names = match &app.removal {
         Removal::Packages(full_names) => full_names,
-        Removal::TurnOffResume => return turn_off_resume(),
+        Removal::TurnOff(switch) => return turn_off(*switch),
     };
     let mut removed = false;
     for full_name in full_names {
@@ -553,42 +711,28 @@ pub fn remove_all(apps: &[App], progress: impl Fn(usize)) -> Vec<Outcome> {
     };
     let now = chrono::Local::now().naive_local();
     write_log(&log_text(now, apps, &outcomes));
-    stop_suggested_installs();
     outcomes
 }
 
-/// Where Windows keeps whether it may install the apps it promotes, such as games in Start, by itself.
-const CONTENT_DELIVERY: &str = r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";
-const SUGGESTED_INSTALLS: [&str; 3] = ["SilentInstalledAppsEnabled", "OemPreInstalledAppsEnabled", "PreInstalledAppsEnabled"];
-
-/// Stop Windows from quietly installing the apps it promotes, so the ones just removed don't come back.
-/// This is the account's own setting and needs no administrator rights.
-fn stop_suggested_installs() {
-    if !system::reg_key_exists(Hive::CurrentUser, CONTENT_DELIVERY) {
-        return;
-    }
-    for value in SUGGESTED_INSTALLS {
-        if system::reg_dword(Hive::CurrentUser, CONTENT_DELIVERY, value) == Some(0) {
-            continue;
-        }
-        match system::set_reg_dword(Hive::CurrentUser, CONTENT_DELIVERY, value, 0) {
-            Ok(()) => applog::info("apps", format!("Turned off {value}, so Windows no longer installs promoted apps by itself.")),
-            Err(error) => applog::warning("apps", format!("Couldn't turn off {value}: {error}")),
-        }
-    }
-}
-
-/// What the removal said, for the window, such as "Removed 2 of 3 apps.".
-pub fn result_text(outcomes: &[Outcome]) -> String {
+/// What the removal said, for the window, such as "Removed 2 of 3 apps.". `names` are the apps' names, in the
+/// order of `outcomes`.
+pub fn result_text(names: &[String], outcomes: &[Outcome]) -> String {
     let total = outcomes.len();
     let failed = outcomes.iter().filter(|outcome| matches!(outcome, Outcome::NotRemoved(_))).count();
     let removed = total - failed;
     let apps = |count: usize| if count == 1 { "1 app".to_owned() } else { format!("{count} apps") };
-    // Resume is the one app turned off instead.
-    let turned_off = outcomes.contains(&Outcome::TurnedOff);
+    // Parts of Windows are turned off instead.
+    let turned_off: Vec<&str> = names
+        .iter()
+        .zip(outcomes)
+        .filter(|(_, outcome)| **outcome == Outcome::TurnedOff)
+        .map(|(name, _)| name.as_str())
+        .collect();
     match failed {
-        0 if turned_off && total == 1 => "Turned off Resume.".to_owned(),
-        0 if turned_off => format!("Removed {} and turned off Resume.", apps(total - 1)),
+        0 if turned_off.len() == total => format!("Turned off {}.", and_list(&turned_off)),
+        0 if !turned_off.is_empty() => {
+            format!("Removed {} and turned off {}.", apps(total - turned_off.len()), and_list(&turned_off))
+        }
         0 => format!("Removed {}.", apps(total)),
         _ if removed == 0 => format!("Couldn't remove {}. The log says why.", if total == 1 { "it".to_owned() } else { apps(total) }),
         _ => format!("Removed {removed} of {total} apps. The log says why the others weren't."),
@@ -880,13 +1024,45 @@ mod tests {
     #[test]
     fn the_result_says_how_many_went() {
         let failed = || Outcome::NotRemoved("x".to_owned());
-        assert_eq!(result_text(&[Outcome::Removed, Outcome::AlreadyGone]), "Removed 2 apps.");
-        assert_eq!(result_text(&[Outcome::Removed]), "Removed 1 app.");
-        assert_eq!(result_text(&[failed()]), "Couldn't remove it. The log says why.");
-        assert_eq!(result_text(&[failed(), failed()]), "Couldn't remove 2 apps. The log says why.");
-        assert_eq!(result_text(&[Outcome::Removed, failed(), Outcome::Removed]), "Removed 2 of 3 apps. The log says why the others weren't.");
-        assert_eq!(result_text(&[Outcome::TurnedOff]), "Turned off Resume.");
-        assert_eq!(result_text(&[Outcome::Removed, Outcome::TurnedOff]), "Removed 1 app and turned off Resume.");
+        let result = |pairs: &[(&str, Outcome)]| {
+            let names: Vec<String> = pairs.iter().map(|(name, _)| (*name).to_owned()).collect();
+            let outcomes: Vec<Outcome> = pairs.iter().map(|(_, outcome)| outcome.clone()).collect();
+            result_text(&names, &outcomes)
+        };
+        assert_eq!(result(&[("Tips", Outcome::Removed), ("Maps", Outcome::AlreadyGone)]), "Removed 2 apps.");
+        assert_eq!(result(&[("Tips", Outcome::Removed)]), "Removed 1 app.");
+        assert_eq!(result(&[("Tips", failed())]), "Couldn't remove it. The log says why.");
+        assert_eq!(result(&[("Tips", failed()), ("Maps", failed())]), "Couldn't remove 2 apps. The log says why.");
+        assert_eq!(
+            result(&[("Tips", Outcome::Removed), ("Maps", failed()), ("News", Outcome::Removed)]),
+            "Removed 2 of 3 apps. The log says why the others weren't."
+        );
+        assert_eq!(result(&[("Resume", Outcome::TurnedOff)]), "Turned off Resume.");
+        assert_eq!(result(&[("Tips", Outcome::Removed), ("Resume", Outcome::TurnedOff)]), "Removed 1 app and turned off Resume.");
+        assert_eq!(
+            result(&[
+                ("Automatic app installs", Outcome::TurnedOff),
+                ("Tips", Outcome::Removed),
+                ("Suggestions", Outcome::TurnedOff),
+                ("Resume", Outcome::TurnedOff),
+            ]),
+            "Removed 1 app and turned off Automatic app installs, Suggestions and Resume."
+        );
+    }
+
+    #[test]
+    fn parts_of_windows_are_told_apart_from_apps() {
+        for switch in Switch::ALL {
+            assert!(known(switch.key()).is_none(), "{switch:?}");
+            assert!(CATALOG.iter().all(|known| known.name != switch.name()), "{switch:?}");
+            assert_eq!(Switch::ALL.iter().filter(|other| other.key() == switch.key()).count(), 1);
+        }
+        // Each value once, so turning one on or off can't undo the other.
+        let mut values: Vec<_> = APP_INSTALLS.iter().chain(&SUGGESTIONS).collect();
+        let total = values.len();
+        values.sort();
+        values.dedup();
+        assert_eq!(values.len(), total);
     }
 
     #[test]
@@ -909,7 +1085,7 @@ mod tests {
         let scan = Scan {
             apps: vec![app("Tips", "Microsoft.Getstarted"), App { recommended: false, ..app("Clock", "Microsoft.WindowsAlarms") }],
             guides: vec![Guide { name: "Microsoft OneDrive".to_owned(), steps: String::new(), note: "" }],
-            resume_off: false,
+            turned_off: vec![Switch::Resume],
         };
         let ignored: BTreeSet<String> = ["Microsoft.WindowsAlarms", "Microsoft OneDrive", "Microsoft.BingWeather"].map(str::to_owned).into();
         let offered = scan.without(&ignored);
@@ -933,7 +1109,7 @@ mod tests {
         for guide in &scan.guides {
             println!("{}: {} {}", guide.name, guide.steps, guide.note);
         }
-        println!("Resume turned off: {}", scan.resume_off);
+        println!("Turned off: {:?}", scan.turned_off);
         println!("{} · {}", scan.summary(), scan.breakdown());
     }
 
